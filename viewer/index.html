@@ -197,7 +197,9 @@ function loadModel(url, filename) {
     controls.update();
 
     currentFile = filename;
-    const dims = `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`;
+    // glTF uses meters, build123d exports in mm → convert back
+    const mm = (v) => (v * 1000).toFixed(1);
+    const dims = `${mm(size.x)} x ${mm(size.y)} x ${mm(size.z)} mm`;
     updateHud(filename, dims);
   });
 }
