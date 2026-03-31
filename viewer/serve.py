@@ -1,0 +1,129 @@
+"""Standalone viewer server for build123d models.
+
+Usage:
+    python serve.py [--port 3123]
+
+Serves a Three.js viewer that auto-loads the latest .glb.
+Code panel lets you edit and re-run scripts from the browser.
+"""
+
+import http.server
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+PORT = 3123
+SKILL_DIR = Path(__file__).parent.parent
+VIEWER_DIR = Path(__file__).parent
+MODELS_DIR = VIEWER_DIR / "models"
+SCRIPT_PATH = MODELS_DIR / "script.py"
+VENV_PYTHON = SKILL_DIR / ".venv" / "bin" / "python3"
+
+
+def get_python():
+    """Return the venv python if available, else system python3."""
+    return str(VENV_PYTHON) if VENV_PYTHON.exists() else "python3"
+
+
+def get_model_version():
+    """Return current version based on latest glb mtime."""
+    glbs = list(MODELS_DIR.glob("*.glb"))
+    if not glbs:
+        return 0
+    return int(max(os.path.getmtime(f) for f in glbs) * 1000)
+
+
+class ViewerHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(VIEWER_DIR), **kwargs)
+
+    def do_GET(self):
+        if self.path == "/api/latest":
+            self.send_latest()
+        elif self.path == "/":
+            self.path = "/index.html"
+            super().do_GET()
+        else:
+            super().do_GET()
+
+    def do_POST(self):
+        if self.path == "/api/run":
+            self.run_code()
+        else:
+            self.send_error(404)
+
+    def send_latest(self):
+        glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
+        code = SCRIPT_PATH.read_text() if SCRIPT_PATH.exists() else ""
+        data = {
+            "file": glbs[0].name if glbs else None,
+            "version": get_model_version(),
+            "code": code,
+        }
+        self.send_json(data)
+
+    def run_code(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length))
+        code = body.get("code", "")
+
+        SCRIPT_PATH.write_text(code)
+
+        t0 = time.time()
+        try:
+            result = subprocess.run(
+                [get_python(), str(SCRIPT_PATH)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(SKILL_DIR),
+                env={**os.environ, "PYTHONPATH": str(SKILL_DIR)},
+            )
+            elapsed = f"{time.time() - t0:.1f}s"
+            if result.returncode == 0:
+                self.send_json({"ok": True, "time": elapsed, "output": result.stdout})
+            else:
+                err = result.stderr.strip().split("\n")
+                short_err = err[-1] if err else "unknown error"
+                self.send_json({"ok": False, "error": short_err, "stderr": result.stderr})
+        except subprocess.TimeoutExpired:
+            self.send_json({"ok": False, "error": "timeout (30s)"})
+        except Exception as e:
+            self.send_json({"ok": False, "error": str(e)})
+
+    def send_json(self, data):
+        body = json.dumps(data).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        if "/api/latest" not in str(args):
+            super().log_message(format, *args)
+
+
+def main():
+    port = PORT
+    if "--port" in sys.argv:
+        port = int(sys.argv[sys.argv.index("--port") + 1])
+
+    MODELS_DIR.mkdir(exist_ok=True)
+
+    server = http.server.HTTPServer(("", port), ViewerHandler)
+    print(f"build123d viewer: http://localhost:{port}")
+    print(f"models dir:       {MODELS_DIR}")
+    print(f"python:           {get_python()}")
+    print("waiting for .glb files...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>build123d viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: monospace; overflow: hidden; }
+  #viewer { width: 100vw; height: 100vh; display: block; }
+
+  #hud {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(0,0,0,0.6); padding: 10px 14px; border-radius: 6px;
+    font-size: 13px; line-height: 1.6; pointer-events: none;
+    max-width: 360px;
+  }
+  #hud .file { color: #7fdbca; }
+  #hud .status { color: #999; }
+  #hud .waiting { color: #f0c674; }
+
+  #axes-helper {
+    position: fixed; bottom: 16px; left: 16px;
+    width: 100px; height: 100px;
+    pointer-events: none;
+  }
+
+  /* Code panel */
+  #code-panel {
+    position: fixed; top: 0; right: 0; width: 420px; height: 100vh;
+    background: #12121f; border-left: 1px solid #2a2a44;
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 10;
+  }
+  #code-panel.open { transform: translateX(0); }
+
+  #code-panel header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #2a2a44;
+    font-size: 13px; color: #7fdbca; flex-shrink: 0;
+  }
+  #code-panel header button {
+    background: none; border: none; color: #999; cursor: pointer;
+    font-size: 16px; font-family: monospace;
+  }
+  #code-panel header button:hover { color: #e0e0e0; }
+
+  #code-editor {
+    flex: 1; padding: 12px; font-family: monospace; font-size: 13px;
+    background: #0d0d18; color: #c5c8c6; border: none; resize: none;
+    line-height: 1.5; tab-size: 4;
+    outline: none;
+  }
+
+  #code-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-top: 1px solid #2a2a44;
+    flex-shrink: 0;
+  }
+  #run-btn {
+    background: #2d6a4f; color: #e0e0e0; border: none; border-radius: 4px;
+    padding: 6px 16px; font-family: monospace; font-size: 13px;
+    cursor: pointer;
+  }
+  #run-btn:hover { background: #3a8963; }
+  #run-btn:disabled { background: #333; color: #666; cursor: wait; }
+  #run-status { font-size: 12px; color: #999; }
+  #run-status.error { color: #cc6666; }
+
+  /* Toggle button */
+  #toggle-code {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(0,0,0,0.6); border: 1px solid #2a2a44;
+    color: #7fdbca; font-family: monospace; font-size: 13px;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    z-index: 11;
+  }
+  #toggle-code:hover { background: rgba(0,0,0,0.8); }
+  #code-panel.open ~ #toggle-code { right: 436px; }
+</style>
+</head>
+<body>
+
+<canvas id="viewer"></canvas>
+
+<div id="hud">
+  <div class="waiting">waiting for model...</div>
+  <div class="status">polling /models/</div>
+</div>
+<canvas id="axes-helper"></canvas>
+
+<div id="code-panel">
+  <header>
+    <span>script.py</span>
+    <button id="close-code">&times;</button>
+  </header>
+  <textarea id="code-editor" spellcheck="false" placeholder="# build123d code will appear here when a model is rendered..."></textarea>
+  <div id="code-bar">
+    <button id="run-btn">Run (Ctrl+Enter)</button>
+    <span id="run-status"></span>
+  </div>
+</div>
+<button id="toggle-code">&lt;/&gt; code</button>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// Main scene
+const canvas = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x1a1a2e);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+camera.position.set(3, 3, 3);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+fillLight.position.set(-5, 2, -5);
+scene.add(fillLight);
+
+// Grid
+scene.add(new THREE.GridHelper(10, 20, 0x333355, 0x222244));
+
+// Axes helper in corner
+const axesCanvas = document.getElementById('axes-helper');
+const axesRenderer = new THREE.WebGLRenderer({ canvas: axesCanvas, alpha: true, antialias: true });
+axesRenderer.setPixelRatio(window.devicePixelRatio);
+axesRenderer.setSize(100, 100);
+const axesScene = new THREE.Scene();
+const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+axesScene.add(new THREE.AxesHelper(1));
+
+// HUD
+const hud = document.getElementById('hud');
+function updateHud(file, status) {
+  hud.innerHTML = '';
+  if (file) {
+    const f = document.createElement('div');
+    f.className = 'file';
+    f.textContent = file;
+    hud.appendChild(f);
+  }
+  const s = document.createElement('div');
+  s.className = status === 'waiting' ? 'waiting' : 'status';
+  s.textContent = status === 'waiting' ? 'waiting for model...' : status;
+  hud.appendChild(s);
+}
+
+// Model loading
+const loader = new GLTFLoader();
+let currentModel = null;
+let currentFile = null;
+let modelVersion = 0;
+
+function loadModel(url, filename) {
+  loader.load(url, (gltf) => {
+    if (currentModel) scene.remove(currentModel);
+    currentModel = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(currentModel);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const dist = maxDim * 2;
+
+    currentModel.position.sub(center);
+    scene.add(currentModel);
+
+    camera.position.set(dist, dist * 0.8, dist);
+    camera.lookAt(0, 0, 0);
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+    currentFile = filename;
+    const dims = `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`;
+    updateHud(filename, dims);
+  });
+}
+
+// Poll for latest model + code
+async function poll() {
+  try {
+    const resp = await fetch('/api/latest');
+    const data = await resp.json();
+    if (data.file && data.version !== modelVersion) {
+      modelVersion = data.version;
+      loadModel('/models/' + data.file + '?t=' + Date.now(), data.file);
+      // Load the source code
+      if (data.code) {
+        const editor = document.getElementById('code-editor');
+        // Only update if user hasn't modified the code
+        if (!editor.dataset.dirty) {
+          editor.value = data.code;
+        }
+      }
+    }
+    if (!currentFile) updateHud(null, 'waiting');
+  } catch (e) {
+    // server not ready
+  }
+}
+setInterval(poll, 1000);
+poll();
+
+// Code panel toggle
+const panel = document.getElementById('code-panel');
+const toggleBtn = document.getElementById('toggle-code');
+const closeBtn = document.getElementById('close-code');
+const editor = document.getElementById('code-editor');
+const runBtn = document.getElementById('run-btn');
+const runStatus = document.getElementById('run-status');
+
+toggleBtn.addEventListener('click', () => {
+  panel.classList.toggle('open');
+  resizeViewer();
+});
+closeBtn.addEventListener('click', () => {
+  panel.classList.remove('open');
+  resizeViewer();
+});
+
+// Track if user has edited
+editor.addEventListener('input', () => {
+  editor.dataset.dirty = 'true';
+});
+
+// Run code
+async function runCode() {
+  runBtn.disabled = true;
+  runStatus.textContent = 'running...';
+  runStatus.className = '';
+  editor.dataset.dirty = '';
+
+  try {
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.value }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      runStatus.textContent = `done (${data.time})`;
+      runStatus.className = '';
+      // Force reload
+      modelVersion = -1;
+      poll();
+    } else {
+      runStatus.textContent = data.error;
+      runStatus.className = 'error';
+    }
+  } catch (e) {
+    runStatus.textContent = 'server error';
+    runStatus.className = 'error';
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+runBtn.addEventListener('click', runCode);
+editor.addEventListener('keydown', (e) => {
+  // Ctrl/Cmd + Enter to run
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runCode();
+  }
+  // Tab inserts spaces
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 4;
+    editor.dataset.dirty = 'true';
+  }
+});
+
+// Resize viewer when panel opens/closes
+function resizeViewer() {
+  const w = panel.classList.contains('open') ? window.innerWidth - 420 : window.innerWidth;
+  renderer.setSize(w, window.innerHeight);
+  camera.aspect = w / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+
+// Render loop
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+  axesCamera.position.copy(camera.position).normalize().multiplyScalar(2.5);
+  axesCamera.lookAt(0, 0, 0);
+  axesRenderer.render(axesScene, axesCamera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  resizeViewer();
+});
+</script>
+</body>
+</html>
