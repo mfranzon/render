@@ -1,5 +1,8 @@
 # /render — 3D Model Skill for Claude Code
 
+<img width="702" height="745" alt="Screenshot 2026-04-01 alle 00 15 56" src="https://github.com/user-attachments/assets/d6bca223-2d33-4342-9d16-20a3f593731e" />
+
+
 A Claude Code skill that generates 3D models from text descriptions using [build123d](https://github.com/gumyr/build123d) and renders them in a browser viewer.
 
 ```
