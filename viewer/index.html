@@ -68,16 +68,22 @@
   #run-status { font-size: 12px; color: #999; }
   #run-status.error { color: #cc6666; }
 
-  /* Toggle button */
-  #toggle-code {
+  /* Top-right buttons */
+  #top-buttons {
     position: fixed; top: 16px; right: 16px;
+    display: flex; gap: 8px;
+    z-index: 11;
+  }
+  #code-panel.open ~ #top-buttons { right: 436px; }
+
+  #top-buttons button {
     background: rgba(0,0,0,0.6); border: 1px solid #2a2a44;
     color: #7fdbca; font-family: monospace; font-size: 13px;
     padding: 6px 12px; border-radius: 4px; cursor: pointer;
-    z-index: 11;
   }
-  #toggle-code:hover { background: rgba(0,0,0,0.8); }
-  #code-panel.open ~ #toggle-code { right: 436px; }
+  #top-buttons button:hover { background: rgba(0,0,0,0.8); }
+  #top-buttons button:disabled { color: #555; cursor: default; border-color: #1a1a33; }
+  #top-buttons button:disabled:hover { background: rgba(0,0,0,0.6); }
 </style>
 </head>
 <body>
@@ -101,7 +107,10 @@
     <span id="run-status"></span>
   </div>
 </div>
-<button id="toggle-code">&lt;/&gt; code</button>
+<div id="top-buttons">
+  <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
+  <button id="toggle-code">&lt;/&gt; code</button>
+</div>
 
 <script type="importmap">
 {
@@ -221,6 +230,9 @@ async function poll() {
         }
       }
     }
+    // Update STEP download button
+    currentStep = data.step || null;
+    stepBtn.disabled = !currentStep;
     if (!currentFile) updateHud(null, 'waiting');
   } catch (e) {
     // server not ready
@@ -228,6 +240,16 @@ async function poll() {
 }
 setInterval(poll, 1000);
 poll();
+
+// STEP download
+const stepBtn = document.getElementById('download-step');
+let currentStep = null;
+
+stepBtn.addEventListener('click', () => {
+  if (currentStep) {
+    window.location.href = '/api/download/' + currentStep;
+  }
+});
 
 // Code panel toggle
 const panel = document.getElementById('code-panel');

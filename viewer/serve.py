@@ -43,6 +43,8 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/latest":
             self.send_latest()
+        elif self.path.startswith("/api/download/"):
+            self.download_file()
         elif self.path == "/":
             self.path = "/index.html"
             super().do_GET()
@@ -58,12 +60,33 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
     def send_latest(self):
         glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
         code = SCRIPT_PATH.read_text() if SCRIPT_PATH.exists() else ""
+        step_name = None
+        if glbs:
+            step_path = glbs[0].with_suffix(".step")
+            if step_path.exists():
+                step_name = step_path.name
         data = {
             "file": glbs[0].name if glbs else None,
             "version": get_model_version(),
             "code": code,
+            "step": step_name,
         }
         self.send_json(data)
+
+    def download_file(self):
+        # /api/download/<name>.step
+        filename = self.path.split("/api/download/", 1)[1]
+        filepath = MODELS_DIR / filename
+        if not filepath.exists() or not filepath.suffix == ".step":
+            self.send_error(404, "File not found")
+            return
+        data = filepath.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/STEP")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", len(data))
+        self.end_headers()
+        self.wfile.write(data)
 
     def run_code(self):
         length = int(self.headers.get("Content-Length", 0))
