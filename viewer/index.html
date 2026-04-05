@@ -24,6 +24,62 @@
     pointer-events: none;
   }
 
+  /* Gallery panel */
+  #gallery-panel {
+    position: fixed; top: 0; left: 0; width: 240px; height: 100vh;
+    background: #12121f; border-right: 1px solid #2a2a44;
+    display: flex; flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 10;
+  }
+  #gallery-panel.open { transform: translateX(0); }
+
+  #gallery-panel header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #2a2a44;
+    font-size: 13px; color: #7fdbca; flex-shrink: 0;
+  }
+  #gallery-panel header button {
+    background: none; border: none; color: #999; cursor: pointer;
+    font-size: 16px; font-family: monospace;
+  }
+  #gallery-panel header button:hover { color: #e0e0e0; }
+
+  #gallery-list {
+    flex: 1; overflow-y: auto; padding: 6px 0;
+  }
+  #gallery-list::-webkit-scrollbar { width: 4px; }
+  #gallery-list::-webkit-scrollbar-thumb { background: #2a2a44; border-radius: 2px; }
+
+  .gallery-item {
+    padding: 8px 14px; cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.15s;
+  }
+  .gallery-item:hover { background: rgba(127,219,202,0.08); }
+  .gallery-item.active {
+    background: rgba(127,219,202,0.12);
+    border-left-color: #7fdbca;
+  }
+  .gallery-item .gi-name {
+    font-size: 13px; color: #e0e0e0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .gallery-item .gi-meta {
+    font-size: 11px; color: #666; margin-top: 2px;
+  }
+
+  #gallery-empty {
+    padding: 20px 14px; color: #555; font-size: 12px;
+    text-align: center;
+  }
+
+  /* Shift elements when gallery is open */
+  #gallery-panel.open ~ #hud { left: 256px; }
+  #gallery-panel.open ~ #axes-helper { left: 256px; }
+  #gallery-panel.open ~ #top-buttons #toggle-gallery { background: rgba(127,219,202,0.15); }
+
   /* Code panel */
   #code-panel {
     position: fixed; top: 0; right: 0; width: 420px; height: 100vh;
@@ -90,6 +146,16 @@
 
 <canvas id="viewer"></canvas>
 
+<div id="gallery-panel">
+  <header>
+    <span>models</span>
+    <button id="close-gallery">&times;</button>
+  </header>
+  <div id="gallery-list">
+    <div id="gallery-empty">no models yet</div>
+  </div>
+</div>
+
 <div id="hud">
   <div class="waiting">waiting for model...</div>
   <div class="status">polling /models/</div>
@@ -108,6 +174,7 @@
   </div>
 </div>
 <div id="top-buttons">
+  <button id="toggle-gallery" title="Model gallery">&#x25A6; models</button>
   <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
   <button id="toggle-code">&lt;/&gt; code</button>
 </div>
@@ -185,6 +252,7 @@ const loader = new GLTFLoader();
 let currentModel = null;
 let currentFile = null;
 let modelVersion = 0;
+let activeModelName = null;
 
 function loadModel(url, filename) {
   loader.load(url, (gltf) => {
@@ -220,7 +288,9 @@ async function poll() {
     const data = await resp.json();
     if (data.file && data.version !== modelVersion) {
       modelVersion = data.version;
+      activeModelName = data.file.replace(/\.glb$/, '');
       loadModel('/models/' + data.file + '?t=' + Date.now(), data.file);
+      if (galleryPanel.classList.contains('open')) refreshGallery();
       // Load the source code
       if (data.code) {
         const editor = document.getElementById('code-editor');
@@ -323,9 +393,110 @@ editor.addEventListener('keydown', (e) => {
   }
 });
 
+// Gallery panel
+const galleryPanel = document.getElementById('gallery-panel');
+const galleryToggleBtn = document.getElementById('toggle-gallery');
+const galleryCloseBtn = document.getElementById('close-gallery');
+const galleryList = document.getElementById('gallery-list');
+const galleryEmpty = document.getElementById('gallery-empty');
+
+galleryToggleBtn.addEventListener('click', () => {
+  galleryPanel.classList.toggle('open');
+  if (galleryPanel.classList.contains('open')) refreshGallery();
+  resizeViewer();
+});
+galleryCloseBtn.addEventListener('click', () => {
+  galleryPanel.classList.remove('open');
+  resizeViewer();
+});
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatTime(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function refreshGallery() {
+  try {
+    const resp = await fetch('/api/list');
+    const data = await resp.json();
+    const models = data.models || [];
+
+    if (models.length === 0) {
+      galleryEmpty.style.display = '';
+      return;
+    }
+    galleryEmpty.style.display = 'none';
+
+    // Keep existing items and only update if list changed
+    const existingNames = [...galleryList.querySelectorAll('.gallery-item')].map(el => el.dataset.name);
+    const newNames = models.map(m => m.name);
+    const changed = existingNames.length !== newNames.length || existingNames.some((n, i) => n !== newNames[i]);
+    if (!changed) {
+      // Just update active state
+      galleryList.querySelectorAll('.gallery-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.name === activeModelName);
+      });
+      return;
+    }
+
+    galleryList.innerHTML = '';
+    for (const m of models) {
+      const item = document.createElement('div');
+      item.className = 'gallery-item' + (m.name === activeModelName ? ' active' : '');
+      item.dataset.name = m.name;
+      item.innerHTML = `
+        <div class="gi-name">${m.name}</div>
+        <div class="gi-meta">${formatTime(m.mtime)} &middot; ${formatSize(m.size)}</div>
+      `;
+      item.addEventListener('click', () => loadGalleryModel(m));
+      galleryList.appendChild(item);
+    }
+  } catch (e) {
+    // server not ready
+  }
+}
+
+async function loadGalleryModel(m) {
+  activeModelName = m.name;
+  loadModel('/models/' + m.file + '?t=' + Date.now(), m.file);
+
+  // Update active highlight
+  galleryList.querySelectorAll('.gallery-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.name === m.name);
+  });
+
+  // Update STEP button
+  currentStep = m.step || null;
+  stepBtn.disabled = !currentStep;
+
+  // Load this model's script into the code editor
+  try {
+    const resp = await fetch('/api/model/' + m.name);
+    const data = await resp.json();
+    if (data.code) {
+      editor.value = data.code;
+      editor.dataset.dirty = '';
+    }
+  } catch (e) {}
+}
+
+// Refresh gallery periodically when open
+setInterval(() => {
+  if (galleryPanel.classList.contains('open')) refreshGallery();
+}, 3000);
+
 // Resize viewer when panel opens/closes
 function resizeViewer() {
-  const w = panel.classList.contains('open') ? window.innerWidth - 420 : window.innerWidth;
+  let w = window.innerWidth;
+  if (panel.classList.contains('open')) w -= 420;
+  if (galleryPanel.classList.contains('open')) w -= 240;
   renderer.setSize(w, window.innerHeight);
   camera.aspect = w / window.innerHeight;
   camera.updateProjectionMatrix();

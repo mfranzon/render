@@ -124,7 +124,7 @@ render("model", part.part)
 ## Important
 
 - Always use algebra mode unless the model genuinely requires builder contexts
-- Always call `render("model", result)` as the last line
+- Use a descriptive name in `render("gear", result)` — each name creates a separate model in the gallery. Avoid reusing "model" so the user can browse previous renders
 - Set colors for better visualization
 - The viewer auto-reloads — the model appears in the browser within 1 second
 - If the script fails, show the error and fix the code — do NOT ask the user to debug

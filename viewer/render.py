@@ -1,5 +1,6 @@
 """Render helper — exports build123d shapes to .glb + .step for the viewer."""
 
+import inspect
 from pathlib import Path
 
 MODELS_DIR = Path(__file__).parent / "models"
@@ -22,6 +23,13 @@ def render(name: str, shape, **kwargs):
 
     step_out = MODELS_DIR / f"{name}.step"
     export_step(shape, str(step_out))
+
+    # Save a copy of the calling script alongside the model
+    caller = inspect.stack()[1].filename
+    if caller:
+        source = Path(caller).read_text()
+        script_out = MODELS_DIR / f"{name}.py"
+        script_out.write_text(source)
 
     print(f"rendered: {glb_out}")
     print(f"step:     {step_out}")

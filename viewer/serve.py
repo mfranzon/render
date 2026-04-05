@@ -43,6 +43,10 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/latest":
             self.send_latest()
+        elif self.path == "/api/list":
+            self.list_models()
+        elif self.path.startswith("/api/model/"):
+            self.get_model_info()
         elif self.path.startswith("/api/download/"):
             self.download_file()
         elif self.path == "/":
@@ -72,6 +76,30 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
             "step": step_name,
         }
         self.send_json(data)
+
+    def get_model_info(self):
+        # /api/model/<name> — return code for a specific model
+        name = self.path.split("/api/model/", 1)[1]
+        script = MODELS_DIR / f"{name}.py"
+        code = script.read_text() if script.exists() else ""
+        self.send_json({"name": name, "code": code})
+
+    def list_models(self):
+        glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
+        models = []
+        for g in glbs:
+            stat = g.stat()
+            step_exists = g.with_suffix(".step").exists()
+            script = g.with_suffix(".py")
+            models.append({
+                "file": g.name,
+                "name": g.stem,
+                "mtime": int(stat.st_mtime * 1000),
+                "size": stat.st_size,
+                "step": g.with_suffix(".step").name if step_exists else None,
+                "has_script": script.exists(),
+            })
+        self.send_json({"models": models})
 
     def download_file(self):
         # /api/download/<name>.step
@@ -126,7 +154,7 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format, *args):
-        if "/api/latest" not in str(args):
+        if not any(p in str(args) for p in ("/api/latest", "/api/list", "/api/model")):
             super().log_message(format, *args)
 
 
