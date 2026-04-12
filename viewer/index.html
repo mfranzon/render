@@ -140,6 +140,31 @@
   #top-buttons button:hover { background: rgba(0,0,0,0.8); }
   #top-buttons button:disabled { color: #555; cursor: default; border-color: #1a1a33; }
   #top-buttons button:disabled:hover { background: rgba(0,0,0,0.6); }
+  #top-buttons button.active { background: rgba(127,219,202,0.15); }
+
+  /* Slice panel */
+  #slice-panel {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); border: 1px solid #2a2a44;
+    border-radius: 6px; padding: 10px 14px;
+    display: none; align-items: center; gap: 10px;
+    font-size: 12px; color: #e0e0e0; z-index: 11;
+  }
+  #slice-panel.open { display: flex; }
+  #slice-panel .axis-btns { display: flex; gap: 4px; }
+  #slice-panel .axis-btns button {
+    background: #12121f; border: 1px solid #2a2a44; color: #999;
+    font-family: monospace; font-size: 12px; width: 24px; height: 24px;
+    border-radius: 3px; cursor: pointer;
+  }
+  #slice-panel .axis-btns button.active { background: #2d6a4f; color: #e0e0e0; border-color: #3a8963; }
+  #slice-panel input[type="range"] { width: 220px; }
+  #slice-panel #slice-flip {
+    background: #12121f; border: 1px solid #2a2a44; color: #999;
+    font-family: monospace; font-size: 12px; padding: 4px 8px;
+    border-radius: 3px; cursor: pointer;
+  }
+  #slice-panel #slice-value { color: #7fdbca; min-width: 60px; text-align: right; }
 </style>
 </head>
 <body>
@@ -173,8 +198,22 @@
     <span id="run-status"></span>
   </div>
 </div>
+<div id="slice-panel">
+  <span>axis</span>
+  <div class="axis-btns">
+    <button data-axis="x">X</button>
+    <button data-axis="y" class="active">Y</button>
+    <button data-axis="z">Z</button>
+  </div>
+  <input id="slice-slider" type="range" min="-1" max="1" step="0.001" value="0">
+  <span id="slice-value">0.0 mm</span>
+  <button id="slice-flip" title="Flip clip direction">&#x21C4;</button>
+</div>
+
 <div id="top-buttons">
   <button id="toggle-gallery" title="Model gallery">&#x25A6; models</button>
+  <button id="render-mode" title="Cycle: solid / wireframe / x-ray">&#x25A0; solid</button>
+  <button id="toggle-slice" title="Cross-section slice">&#x2702; slice</button>
   <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
   <button id="toggle-code">&lt;/&gt; code</button>
 </div>
@@ -199,6 +238,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x1a1a2e);
+renderer.localClippingEnabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
@@ -210,14 +250,25 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-// Lights
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-dirLight.position.set(5, 10, 7);
-scene.add(dirLight);
-const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
-fillLight.position.set(-5, 2, -5);
+// Lights — studio-ish 3-point + hemisphere + ambient
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+scene.add(new THREE.HemisphereLight(0xddeeff, 0x404060, 0.8));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+keyLight.position.set(5, 10, 7);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.9);
+fillLight.position.set(-6, 3, -4);
 scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+rimLight.position.set(0, -5, -8);
+scene.add(rimLight);
+
+const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
+topLight.position.set(0, 12, 0);
+scene.add(topLight);
 
 // Grid
 scene.add(new THREE.GridHelper(10, 20, 0x333355, 0x222244));
@@ -278,8 +329,186 @@ function loadModel(url, filename) {
     const mm = (v) => (v * 1000).toFixed(1);
     const dims = `${mm(size.x)} x ${mm(size.y)} x ${mm(size.z)} mm`;
     updateHud(filename, dims);
+
+    // Update slice bounds from centered model half-extents
+    sliceState.bounds.x = size.x / 2;
+    sliceState.bounds.y = size.y / 2;
+    sliceState.bounds.z = size.z / 2;
+    refreshSliceSlider();
+    updateSlicePlane();
+
+    // Re-apply current render mode to new model
+    savedMaterials.clear();
+    applyRenderMode();
+
+    // Build stencil cap helpers for slice mode and apply current clip state
+    rebuildSliceHelpers();
+    applyClippingToModel();
   });
 }
+
+// Slice / clipping plane with stencil capping (solid cross-section)
+const AXIS_VEC = { x: new THREE.Vector3(1,0,0), y: new THREE.Vector3(0,1,0), z: new THREE.Vector3(0,0,1) };
+const sliceState = {
+  enabled: false,
+  axis: 'y',
+  value: 0,      // in three.js units (meters)
+  flip: 1,       // +1 or -1
+  plane: new THREE.Plane(new THREE.Vector3(0,1,0), 0),
+  bounds: { x: 1, y: 1, z: 1 },  // half-extent per axis, in meters
+  stencilMeshes: [],  // back/front stencil-write helpers (children of originals)
+  capMesh: null,       // fullscreen-ish plane that draws the cap color where stencil != 0
+};
+
+function updateSlicePlane() {
+  const n = AXIS_VEC[sliceState.axis].clone().multiplyScalar(sliceState.flip);
+  sliceState.plane.set(n, -n.dot(AXIS_VEC[sliceState.axis].clone().multiplyScalar(sliceState.value)));
+  positionCapMesh();
+}
+
+function positionCapMesh() {
+  if (!sliceState.capMesh) return;
+  const p = sliceState.plane;
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), p.normal);
+  sliceState.capMesh.quaternion.copy(q);
+  sliceState.capMesh.position.copy(p.normal).multiplyScalar(-p.constant);
+}
+
+function disposeSliceHelpers() {
+  for (const m of sliceState.stencilMeshes) {
+    if (m.parent) m.parent.remove(m);
+    m.material.dispose();
+  }
+  sliceState.stencilMeshes = [];
+  if (sliceState.capMesh) {
+    scene.remove(sliceState.capMesh);
+    sliceState.capMesh.geometry.dispose();
+    sliceState.capMesh.material.dispose();
+    sliceState.capMesh = null;
+  }
+}
+
+function rebuildSliceHelpers() {
+  // No helpers needed — model has real infill geometry, plain clipping
+  // is sufficient to reveal the cross-section.
+  disposeSliceHelpers();
+}
+
+function applyClippingToModel() {
+  if (!currentModel) return;
+  const planes = sliceState.enabled ? [sliceState.plane] : [];
+  currentModel.traverse((child) => {
+    if (!child.isMesh || child.userData.isSliceHelper) return;
+    child.material.clippingPlanes = planes;
+    child.material.side = sliceState.enabled ? THREE.DoubleSide : THREE.FrontSide;
+    child.material.clipShadows = true;
+    child.material.needsUpdate = true;
+  });
+}
+
+// Render mode: solid → wireframe → xray → solid
+const RENDER_MODES = ['solid', 'wireframe', 'xray'];
+const RENDER_LABELS = { solid: '\u25A0 solid', wireframe: '\u25A1 wire', xray: '\u25C7 x-ray' };
+let renderMode = 'solid';
+let savedMaterials = new Map();
+
+const renderModeBtn = document.getElementById('render-mode');
+renderModeBtn.addEventListener('click', () => {
+  const idx = RENDER_MODES.indexOf(renderMode);
+  renderMode = RENDER_MODES[(idx + 1) % RENDER_MODES.length];
+  renderModeBtn.textContent = RENDER_LABELS[renderMode];
+  applyRenderMode();
+});
+
+function applyRenderMode() {
+  if (!currentModel) return;
+
+  currentModel.traverse((child) => {
+    if (!child.isMesh || child.userData.isSliceHelper) return;
+
+    // Save original material on first encounter
+    if (!savedMaterials.has(child.uuid)) {
+      savedMaterials.set(child.uuid, child.material.clone());
+    }
+    const original = savedMaterials.get(child.uuid);
+
+    if (renderMode === 'solid') {
+      child.material = original.clone();
+      child.material.wireframe = false;
+      child.material.transparent = false;
+      child.material.opacity = 1.0;
+      child.material.depthWrite = true;
+      child.material.side = THREE.FrontSide;
+    } else if (renderMode === 'wireframe') {
+      child.material = original.clone();
+      child.material.wireframe = true;
+      child.material.transparent = false;
+      child.material.opacity = 1.0;
+      child.material.depthWrite = true;
+    } else if (renderMode === 'xray') {
+      child.material = original.clone();
+      child.material.wireframe = false;
+      child.material.transparent = true;
+      child.material.opacity = 0.25;
+      child.material.depthWrite = false;
+      child.material.side = THREE.DoubleSide;
+    }
+
+    child.material.clippingPlanes = sliceState.enabled ? [sliceState.plane] : [];
+    child.material.clipShadows = true;
+    child.material.needsUpdate = true;
+  });
+}
+
+// Slice UI wiring
+const slicePanel = document.getElementById('slice-panel');
+const sliceBtn = document.getElementById('toggle-slice');
+const sliceSlider = document.getElementById('slice-slider');
+const sliceValueLabel = document.getElementById('slice-value');
+const sliceFlipBtn = document.getElementById('slice-flip');
+const axisBtns = slicePanel.querySelectorAll('.axis-btns button');
+
+function refreshSliceSlider() {
+  const half = sliceState.bounds[sliceState.axis];
+  sliceSlider.min = -half;
+  sliceSlider.max = half;
+  sliceSlider.step = Math.max(half / 500, 0.0001);
+  // Clamp current value
+  if (sliceState.value > half) sliceState.value = half;
+  if (sliceState.value < -half) sliceState.value = -half;
+  sliceSlider.value = sliceState.value;
+  sliceValueLabel.textContent = (sliceState.value * 1000).toFixed(1) + ' mm';
+}
+
+sliceBtn.addEventListener('click', () => {
+  sliceState.enabled = !sliceState.enabled;
+  slicePanel.classList.toggle('open', sliceState.enabled);
+  sliceBtn.classList.toggle('active', sliceState.enabled);
+  refreshSliceSlider();
+  updateSlicePlane();
+  applyClippingToModel();
+});
+
+axisBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    sliceState.axis = btn.dataset.axis;
+    axisBtns.forEach(b => b.classList.toggle('active', b === btn));
+    refreshSliceSlider();
+    updateSlicePlane();
+    applyClippingToModel();
+  });
+});
+
+sliceSlider.addEventListener('input', () => {
+  sliceState.value = parseFloat(sliceSlider.value);
+  sliceValueLabel.textContent = (sliceState.value * 1000).toFixed(1) + ' mm';
+  updateSlicePlane();
+});
+
+sliceFlipBtn.addEventListener('click', () => {
+  sliceState.flip *= -1;
+  updateSlicePlane();
+});
 
 // Poll for latest model + code
 async function poll() {
