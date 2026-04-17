@@ -3,3 +3,4 @@ __pycache__/
 viewer/models/*.glb
 viewer/models/*.step
 viewer/models/script.py
+.gstack/

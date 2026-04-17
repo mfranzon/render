@@ -432,6 +432,14 @@ function applyRenderMode() {
     }
     const original = savedMaterials.get(child.uuid);
 
+    // Remove any previous feature-edge overlay — rebuilt below if needed
+    if (child.userData.edgeLines) {
+      child.remove(child.userData.edgeLines);
+      child.userData.edgeLines.geometry.dispose();
+      child.userData.edgeLines.material.dispose();
+      child.userData.edgeLines = null;
+    }
+
     if (renderMode === 'solid') {
       child.material = original.clone();
       child.material.wireframe = false;
@@ -439,12 +447,26 @@ function applyRenderMode() {
       child.material.opacity = 1.0;
       child.material.depthWrite = true;
       child.material.side = THREE.FrontSide;
+      child.visible = true;
     } else if (renderMode === 'wireframe') {
+      // Show feature edges (sharp creases) instead of every mesh triangle.
+      // EdgesGeometry with a 20° threshold hides the coplanar diagonals that
+      // the glTF tessellator inserts across flat faces, so the wire view
+      // matches the model's actual geometry.
       child.material = original.clone();
-      child.material.wireframe = true;
-      child.material.transparent = false;
-      child.material.opacity = 1.0;
-      child.material.depthWrite = true;
+      child.material.wireframe = false;
+      child.material.transparent = true;
+      child.material.opacity = 0.0;
+      child.material.depthWrite = false;
+      child.visible = true;
+      const edgesGeom = new THREE.EdgesGeometry(child.geometry, 20);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        clippingPlanes: sliceState.enabled ? [sliceState.plane] : [],
+      });
+      const lines = new THREE.LineSegments(edgesGeom, lineMat);
+      child.add(lines);
+      child.userData.edgeLines = lines;
     } else if (renderMode === 'xray') {
       child.material = original.clone();
       child.material.wireframe = false;

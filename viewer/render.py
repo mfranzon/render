@@ -9,7 +9,7 @@ MODELS_DIR = Path(__file__).parent / "models"
 DEFAULT_WALL_THICKNESS = 1.2   # mm — typical FDM perimeter width
 DEFAULT_INFILL_SPACING = 5.0   # mm between infill walls
 DEFAULT_INFILL_THICKNESS = 0.8 # mm wall thickness of each infill line
-DEFAULT_INFILL_PATTERN = "triangles"  # grid | triangles | honeycomb
+DEFAULT_INFILL_PATTERN = "grid"  # grid | triangles | honeycomb
 
 
 def _bbox(shape):
@@ -21,7 +21,13 @@ def _bbox(shape):
 
 
 def _build_infill_grid(bbox_shape, spacing: float, thickness: float):
-    """Orthogonal crosshatch walls spanning the full bbox (not clipped)."""
+    """Orthogonal crosshatch walls spanning the full bbox, centered on it.
+
+    Walls are placed symmetrically around the bbox center so the outermost
+    wall sits exactly on the bbox face; after clipping + fusing with the
+    shell, every infill wall welds into the perimeter with no gap at the
+    top, bottom, or side caps.
+    """
     from build123d import Box, Pos
 
     xmin, ymin, zmin, xmax, ymax, zmax = _bbox(bbox_shape)
@@ -29,16 +35,16 @@ def _build_infill_grid(bbox_shape, spacing: float, thickness: float):
     cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
 
     lines = None
-    y = ymin + spacing
-    while y < ymax:
-        wall = Pos(cx, y, cz) * Box(sx * 1.4, thickness, sz * 2.0)
+    nx = int((sx / 2) / spacing)
+    ny = int((sy / 2) / spacing)
+    for i in range(-ny, ny + 1):
+        y = cy + i * spacing
+        wall = Pos(cx, y, cz) * Box(sx * 1.4, thickness, sz * 1.4)
         lines = wall if lines is None else lines + wall
-        y += spacing
-    x = xmin + spacing
-    while x < xmax:
-        wall = Pos(x, cy, cz) * Box(thickness, sy * 1.4, sz * 2.0)
+    for i in range(-nx, nx + 1):
+        x = cx + i * spacing
+        wall = Pos(x, cy, cz) * Box(thickness, sy * 1.4, sz * 1.4)
         lines = wall if lines is None else lines + wall
-        x += spacing
     return lines
 
 
@@ -129,24 +135,34 @@ def render(
     printable = shape
     if wall_thickness > 0:
         try:
+            # Build the result by subtracting empty pockets from the solid
+            # shape. This guarantees a single connected solid with no fuse-
+            # seam tolerance gaps between shell and infill:
+            #   inner   = cavity interior (offset of outer shape)
+            #   infill  = grid of walls spanning the full bbox
+            #   pockets = inner ∖ infill  (the air gaps between infill walls)
+            #   result  = shape ∖ pockets
+            # Every infill wall is therefore contiguous with the outer shell,
+            # top, and bottom caps — nothing relies on a boolean fuse.
             inner = offset(shape, amount=-wall_thickness, kind=Kind.INTERSECTION)
-            shell = shape - inner
-            printable = shell
             if infill_spacing > 0 and infill_thickness > 0:
                 builder = _INFILL_BUILDERS.get(infill_pattern)
                 if builder is None:
                     print(f"unknown infill pattern '{infill_pattern}'; shell only")
+                    printable = shape - inner
                 else:
                     try:
-                        # Build infill spanning the OUTER bbox so lines always
-                        # reach past the inner cavity on every axis, then clip
-                        # to outer shape and fuse with shell for a merged solid.
                         infill = builder(shape, infill_spacing, infill_thickness)
-                        if infill is not None:
-                            clipped = infill & shape
-                            printable = shell + clipped
+                        if infill is None:
+                            printable = shape - inner
+                        else:
+                            pockets = inner - infill
+                            printable = shape - pockets
                     except Exception as e:
                         print(f"infill failed ({e}); shell only")
+                        printable = shape - inner
+            else:
+                printable = shape - inner
         except Exception as e:
             print(f"shell failed ({e}); exporting solid")
             printable = shape
