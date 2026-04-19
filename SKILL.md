@@ -5,6 +5,9 @@ description: |
   and render it in the browser viewer. Use when asked to "render", "make a 3D model",
   "create a part", "design a", "model a", "model from image", "recreate this",
   or any 3D modeling request. Supports reference photos, sketches, and drawings.
+  Also handles "apply pending edit" — when the user selects an area in the viewer
+  and submits a change request, Claude reads viewer/edits/latest.{png,json} and
+  modifies the current model's script.
 argument-hint: [image path and/or description of the 3D model]
 allowed-tools:
   - Bash
@@ -32,6 +35,11 @@ into the skill's own venv (one-time, ~30s).
 ## Detect mode
 
 Look at `$ARGUMENTS`:
+- **Edit mode**: the arguments contain the phrase `apply pending edit` (singular
+  or plural) or start with `edit`. The user has submitted one or more ✎ edits
+  from the viewer and they are queued in `viewer/edits/pending/`. Skip to the
+  **Edit mode** steps below — process every pending edit, not just one.
+  Example: `/render apply pending edits`
 - **Image mode**: the arguments contain a file path to an image (`.png`, `.jpg`,
   `.jpeg`, `.webp`, `.gif`, `.bmp`, `.svg`). The path may be followed by an
   optional text description.
@@ -61,7 +69,15 @@ Look at `$ARGUMENTS`:
    The viewer auto-reloads — the model appears within 1 second.
    The user can open the code panel (</> button) in the browser to tweak parameters
    and re-render with Ctrl+Enter. The slice (✂) button enables a cross-section
-   clipping plane with X/Y/Z axis, position slider, and flip.
+   clipping plane with X/Y/Z axis, position slider, and flip. The edit (✎) button
+   lets the user drag a box over an area, type an instruction, and queue it for
+   this Claude session to modify that part of the model.
+
+5. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
+   idempotent — calling it again just resets the timer). Call `ScheduleWakeup`
+   with `delaySeconds: 60`, `prompt: "/loop /render apply pending edits"`, and
+   a short `reason` like "auto-apply ✎ edits from viewer". Tell the user one
+   line: "auto-apply loop armed — ✎ edits will be picked up within ~60s".
 
 ## Steps — Image mode (reference image provided)
 
@@ -112,6 +128,81 @@ Look at `$ARGUMENTS`:
 8. **Confirm** the model was rendered and tell the user to check
    http://localhost:3123. Mention what dimensions you used and any assumptions,
    so the user can adjust in the code panel.
+
+9. **Auto-arm the edit-apply loop** (same as text-mode step 5). Call
+   `ScheduleWakeup` with `delaySeconds: 60`, `prompt: "/loop /render apply
+   pending edits"`, and a short `reason`. Tell the user: "auto-apply loop
+   armed — ✎ edits will be picked up within ~60s".
+
+## Steps — Edit mode (apply pending edits)
+
+The browser viewer lets the user draw a rectangle on the 3D model and type an
+instruction. Each ✎ submission writes one pair of files under
+`${CLAUDE_SKILL_DIR}/viewer/edits/pending/`:
+- `<id>.png` — screenshot with a **red rectangle** marking the area to change.
+- `<id>.json` — metadata: `prompt`, `model`, `script`, `rect`, `timestamp`.
+
+Multiple edits can queue up. Process them oldest-first, then move each pair to
+`viewer/edits/processed/` so the next poll / rerun doesn't re-apply them.
+
+1. **List pending edits** (oldest first):
+   ```bash
+   ls -1tr ${CLAUDE_SKILL_DIR}/viewer/edits/pending/*.json 2>/dev/null
+   ```
+   If the list is empty, report **"no pending edits"** and stop. (When invoked
+   via `/loop`, a no-op tick is expected — do not invent work.)
+
+2. **For each pending `.json`** (oldest to newest):
+
+   a. **Read the metadata**: `cat <path>` → get `id`, `prompt`, `model`, `script`.
+
+   b. **Echo the prompt to the chat** (required, before any code change). Print
+      a visible line in your chat response using this exact format:
+
+      ```
+      📝 Edit prompt: "<prompt verbatim>"  (model: <model>, id: <id>)
+      ```
+
+      The user wants to see each ✎ suggestion surfaced here as a prompt
+      rather than only applied silently. Do this for every pending edit, even
+      when running via `/loop` — the echo is what makes the auto-apply loop
+      transparent.
+
+   c. **Read the screenshot** (`<id>.png`) with the `Read` tool. The red
+      rectangle marks the region the user wants changed. Identify which
+      build123d feature in the code corresponds to that region (a specific
+      hole, fillet, chamfer, boss, wall, pixel, etc.).
+
+   d. **Read the model script** at `${CLAUDE_SKILL_DIR}/<script>` (from the
+      metadata). If `model` is empty or the file is missing, fall back to
+      `viewer/models/script.py`.
+
+   e. **Modify the script** to address `prompt` *for the highlighted region
+      only*. Keep all other geometry unchanged. If the mapping is ambiguous
+      (e.g. multiple similar holes), make a best guess based on the rectangle's
+      position and note the assumption when reporting back.
+
+   f. **Run it**:
+      ```bash
+      PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/<script>
+      ```
+
+   g. **Move the edit files out of the queue**:
+      ```bash
+      mkdir -p ${CLAUDE_SKILL_DIR}/viewer/edits/processed
+      mv ${CLAUDE_SKILL_DIR}/viewer/edits/pending/<id>.{png,json} ${CLAUDE_SKILL_DIR}/viewer/edits/processed/
+      ```
+
+3. **Confirm**: one line per applied edit — what you changed and any
+   assumption about which feature matched the red rectangle. The viewer
+   auto-reloads.
+
+### Auto-apply (hands-free)
+
+The user can run `/loop /render apply pending edits` once per session. `/loop`
+wakes up on a short interval and re-invokes this edit mode — each viewer ✎
+submission is picked up within ~60s with no manual action. When the queue is
+empty, the tick is a no-op.
 
 ## Description: $ARGUMENTS
 

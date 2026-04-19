@@ -78,7 +78,7 @@
   /* Shift elements when gallery is open */
   #gallery-panel.open ~ #hud { left: 256px; }
   #gallery-panel.open ~ #axes-helper { left: 256px; }
-  #gallery-panel.open ~ #top-buttons #toggle-gallery { background: rgba(127,219,202,0.15); }
+  #gallery-panel.open ~ #menu-wrap #toggle-gallery { background: rgba(127,219,202,0.15); }
 
   /* Code panel */
   #code-panel {
@@ -124,23 +124,40 @@
   #run-status { font-size: 12px; color: #999; }
   #run-status.error { color: #cc6666; }
 
-  /* Top-right buttons */
-  #top-buttons {
+  /* Top-right hamburger menu */
+  #menu-wrap {
     position: fixed; top: 16px; right: 16px;
-    display: flex; gap: 8px;
     z-index: 11;
   }
-  #code-panel.open ~ #top-buttons { right: 436px; }
+  #code-panel.open ~ #menu-wrap { right: 436px; }
+
+  #menu-toggle {
+    background: rgba(0,0,0,0.6); border: 1px solid #2a2a44;
+    color: #7fdbca; font-family: monospace; font-size: 18px;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    line-height: 1;
+  }
+  #menu-toggle:hover { background: rgba(0,0,0,0.8); }
+  #menu-toggle.active { background: rgba(127,219,202,0.15); }
+
+  #top-buttons {
+    position: absolute; top: calc(100% + 6px); right: 0;
+    display: none; flex-direction: column; gap: 4px;
+    background: rgba(0,0,0,0.85); border: 1px solid #2a2a44;
+    border-radius: 6px; padding: 6px; min-width: 160px;
+  }
+  #menu-wrap.open #top-buttons { display: flex; }
 
   #top-buttons button {
-    background: rgba(0,0,0,0.6); border: 1px solid #2a2a44;
+    background: transparent; border: 1px solid transparent;
     color: #7fdbca; font-family: monospace; font-size: 13px;
-    padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    padding: 6px 10px; border-radius: 4px; cursor: pointer;
+    text-align: left;
   }
-  #top-buttons button:hover { background: rgba(0,0,0,0.8); }
-  #top-buttons button:disabled { color: #555; cursor: default; border-color: #1a1a33; }
-  #top-buttons button:disabled:hover { background: rgba(0,0,0,0.6); }
-  #top-buttons button.active { background: rgba(127,219,202,0.15); }
+  #top-buttons button:hover { background: rgba(127,219,202,0.08); border-color: #2a2a44; }
+  #top-buttons button:disabled { color: #555; cursor: default; }
+  #top-buttons button:disabled:hover { background: transparent; border-color: transparent; }
+  #top-buttons button.active { background: rgba(127,219,202,0.15); border-color: #2a2a44; }
 
   /* Slice panel */
   #slice-panel {
@@ -165,6 +182,76 @@
     border-radius: 3px; cursor: pointer;
   }
   #slice-panel #slice-value { color: #7fdbca; min-width: 60px; text-align: right; }
+
+  /* Edit mode: area selection */
+  #selection-overlay {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 9;
+  }
+  body.selecting #selection-overlay { pointer-events: auto; cursor: crosshair; }
+  body.selecting #viewer { cursor: crosshair; }
+
+  #selection-rect {
+    position: absolute;
+    display: none;
+    border: 2px solid #ff3355;
+    background: rgba(255, 51, 85, 0.08);
+    pointer-events: none;
+  }
+
+  #edit-modal {
+    position: fixed;
+    display: none;
+    background: #12121f;
+    border: 1px solid #2a2a44;
+    border-radius: 6px;
+    padding: 10px;
+    width: 280px;
+    z-index: 20;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+  }
+  #edit-modal .hint {
+    font-size: 11px; color: #7fdbca; margin-bottom: 6px;
+  }
+  #edit-prompt {
+    width: 100%; background: #0d0d18; color: #e0e0e0;
+    border: 1px solid #2a2a44; border-radius: 4px;
+    padding: 6px 8px; font-family: monospace; font-size: 12px;
+    resize: vertical; min-height: 52px; outline: none;
+  }
+  #edit-prompt:focus { border-color: #7fdbca; }
+  #edit-modal-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 8px; gap: 8px;
+  }
+  #edit-modal-bar button {
+    background: #2d6a4f; color: #e0e0e0; border: none; border-radius: 4px;
+    padding: 5px 12px; font-family: monospace; font-size: 12px;
+    cursor: pointer;
+  }
+  #edit-modal-bar button:hover { background: #3a8963; }
+  #edit-modal-bar button:disabled { background: #333; color: #666; cursor: wait; }
+  #edit-modal-bar .cancel {
+    background: transparent; color: #888;
+  }
+  #edit-modal-bar .cancel:hover { background: rgba(255,255,255,0.05); color: #e0e0e0; }
+  #edit-status { font-size: 11px; color: #cc6666; margin-top: 6px; min-height: 14px; }
+
+  #edit-toast {
+    position: fixed; top: 70px; right: 16px;
+    padding: 10px 14px;
+    background: #12121f; border: 1px solid #2d6a4f; border-radius: 6px;
+    display: none; flex-direction: column; gap: 2px;
+    z-index: 20;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+    font-size: 12px; color: #7fdbca;
+    transition: opacity 0.25s;
+  }
+  #edit-toast.show { display: flex; }
+  #edit-toast.fade { opacity: 0; }
+  #edit-toast .hint { color: #666; font-size: 10px; }
+  #code-panel.open ~ #edit-toast { right: 436px; }
 </style>
 </head>
 <body>
@@ -210,12 +297,36 @@
   <button id="slice-flip" title="Flip clip direction">&#x21C4;</button>
 </div>
 
-<div id="top-buttons">
-  <button id="toggle-gallery" title="Model gallery">&#x25A6; models</button>
-  <button id="render-mode" title="Cycle: solid / wireframe / x-ray">&#x25A0; solid</button>
-  <button id="toggle-slice" title="Cross-section slice">&#x2702; slice</button>
-  <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
-  <button id="toggle-code">&lt;/&gt; code</button>
+<div id="menu-wrap">
+  <button id="menu-toggle" title="Menu" aria-label="Menu">&#9776;</button>
+  <div id="top-buttons">
+    <button id="toggle-gallery" title="Model gallery">&#x25A6; models</button>
+    <button id="render-mode" title="Cycle: solid / wireframe / x-ray">&#x25A0; solid</button>
+    <button id="toggle-slice" title="Cross-section slice">&#x2702; slice</button>
+    <button id="edit-area" title="Select an area to edit with Claude">&#x270E; edit</button>
+    <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
+    <button id="toggle-code">&lt;/&gt; code</button>
+    <button id="shutdown-server" title="Stop the viewer server">&#x23FB; stop</button>
+  </div>
+</div>
+
+<div id="selection-overlay">
+  <div id="selection-rect"></div>
+</div>
+
+<div id="edit-modal">
+  <div class="hint">describe the change for the selected area</div>
+  <textarea id="edit-prompt" placeholder="e.g. make this hole larger"></textarea>
+  <div id="edit-status"></div>
+  <div id="edit-modal-bar">
+    <button class="cancel" id="edit-cancel">cancel</button>
+    <button id="edit-send">send &#x23CE;</button>
+  </div>
+</div>
+
+<div id="edit-toast">
+  <div><span id="edit-toast-text">&#x2713; edit queued &mdash; Claude will apply it</span></div>
+  <div class="hint">tip: run <code>/loop /render apply pending edits</code> once per session to auto-apply</div>
 </div>
 
 <script type="importmap">
@@ -234,7 +345,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Main scene
 const canvas = document.getElementById('viewer');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x1a1a2e);
@@ -574,6 +685,21 @@ stepBtn.addEventListener('click', () => {
 
 // Code panel toggle
 const panel = document.getElementById('code-panel');
+// Hamburger menu toggle
+const menuWrap = document.getElementById('menu-wrap');
+const menuToggle = document.getElementById('menu-toggle');
+menuToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menuWrap.classList.toggle('open');
+  menuToggle.classList.toggle('active');
+});
+document.addEventListener('click', (e) => {
+  if (!menuWrap.contains(e.target)) {
+    menuWrap.classList.remove('open');
+    menuToggle.classList.remove('active');
+  }
+});
+
 const toggleBtn = document.getElementById('toggle-code');
 const closeBtn = document.getElementById('close-code');
 const editor = document.getElementById('code-editor');
@@ -587,6 +713,19 @@ toggleBtn.addEventListener('click', () => {
 closeBtn.addEventListener('click', () => {
   panel.classList.remove('open');
   resizeViewer();
+});
+
+const shutdownBtn = document.getElementById('shutdown-server');
+shutdownBtn.addEventListener('click', async () => {
+  if (!confirm('Stop the viewer server? The page will stop loading updates.')) return;
+  shutdownBtn.disabled = true;
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+  } catch (_) { /* expected — the server may close the connection */ }
+  document.body.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;' +
+    'height:100vh;font-family:monospace;color:#7fdbca;font-size:14px;">' +
+    'viewer stopped — safe to close this tab</div>';
 });
 
 // Track if user has edited
@@ -742,6 +881,173 @@ async function loadGalleryModel(m) {
 setInterval(() => {
   if (galleryPanel.classList.contains('open')) refreshGallery();
 }, 3000);
+
+// Edit mode — select an area and send it to Claude
+const editBtn = document.getElementById('edit-area');
+const selOverlay = document.getElementById('selection-overlay');
+const selRectEl = document.getElementById('selection-rect');
+const editModal = document.getElementById('edit-modal');
+const editPrompt = document.getElementById('edit-prompt');
+const editSendBtn = document.getElementById('edit-send');
+const editCancelBtn = document.getElementById('edit-cancel');
+const editStatus = document.getElementById('edit-status');
+const editToast = document.getElementById('edit-toast');
+let editToastTimer = null;
+
+function showEditToast() {
+  editToast.classList.remove('fade');
+  editToast.classList.add('show');
+  clearTimeout(editToastTimer);
+  editToastTimer = setTimeout(() => {
+    editToast.classList.add('fade');
+    setTimeout(() => editToast.classList.remove('show', 'fade'), 300);
+  }, 4000);
+}
+
+let editMode = false;
+let selStart = null;
+let selRect = null;
+
+function enterEditMode() {
+  editMode = true;
+  editBtn.classList.add('active');
+  document.body.classList.add('selecting');
+  controls.enabled = false;
+}
+
+function exitEditMode() {
+  editMode = false;
+  editBtn.classList.remove('active');
+  document.body.classList.remove('selecting');
+  controls.enabled = true;
+  selRectEl.style.display = 'none';
+  editModal.style.display = 'none';
+  selRect = null;
+  selStart = null;
+  editStatus.textContent = '';
+}
+
+editBtn.addEventListener('click', () => {
+  if (editMode) exitEditMode(); else enterEditMode();
+});
+
+selOverlay.addEventListener('mousedown', (e) => {
+  if (!editMode) return;
+  selStart = { x: e.clientX, y: e.clientY };
+  Object.assign(selRectEl.style, {
+    left: e.clientX + 'px', top: e.clientY + 'px',
+    width: '0px', height: '0px', display: 'block',
+  });
+  editModal.style.display = 'none';
+});
+
+selOverlay.addEventListener('mousemove', (e) => {
+  if (!editMode || !selStart) return;
+  const x = Math.min(selStart.x, e.clientX);
+  const y = Math.min(selStart.y, e.clientY);
+  const w = Math.abs(e.clientX - selStart.x);
+  const h = Math.abs(e.clientY - selStart.y);
+  Object.assign(selRectEl.style, {
+    left: x + 'px', top: y + 'px',
+    width: w + 'px', height: h + 'px',
+  });
+});
+
+selOverlay.addEventListener('mouseup', (e) => {
+  if (!editMode || !selStart) return;
+  const x = Math.min(selStart.x, e.clientX);
+  const y = Math.min(selStart.y, e.clientY);
+  const w = Math.abs(e.clientX - selStart.x);
+  const h = Math.abs(e.clientY - selStart.y);
+  selStart = null;
+  if (w < 10 || h < 10) {
+    selRectEl.style.display = 'none';
+    return;
+  }
+  selRect = { x, y, w, h };
+  // Place modal next to the selection, keep it on screen
+  const modalW = 280, modalH = 160;
+  let mx = x + w + 12, my = y;
+  if (mx + modalW > window.innerWidth - 10) mx = Math.max(10, x - modalW - 12);
+  if (my + modalH > window.innerHeight - 10) my = window.innerHeight - modalH - 10;
+  Object.assign(editModal.style, {
+    left: mx + 'px', top: my + 'px', display: 'block',
+  });
+  editPrompt.value = '';
+  editStatus.textContent = '';
+  editPrompt.focus();
+});
+
+async function sendEdit() {
+  if (!selRect) return;
+  const prompt = editPrompt.value.trim();
+  if (!prompt) {
+    editStatus.textContent = 'enter an instruction first';
+    return;
+  }
+
+  const canvasRect = canvas.getBoundingClientRect();
+  // Canvas pixel scale (drawing buffer vs CSS size)
+  const sx = canvas.width / canvasRect.width;
+  const sy = canvas.height / canvasRect.height;
+  const relX = Math.max(0, (selRect.x - canvasRect.left) * sx);
+  const relY = Math.max(0, (selRect.y - canvasRect.top) * sy);
+  const relW = Math.min(canvas.width - relX, selRect.w * sx);
+  const relH = Math.min(canvas.height - relY, selRect.h * sy);
+
+  // Fresh render so the drawing buffer is current
+  renderer.render(scene, camera);
+
+  const composite = document.createElement('canvas');
+  composite.width = canvas.width;
+  composite.height = canvas.height;
+  const ctx = composite.getContext('2d');
+  ctx.drawImage(canvas, 0, 0);
+  ctx.strokeStyle = '#ff3355';
+  ctx.lineWidth = Math.max(3, Math.round(4 * sx));
+  ctx.strokeRect(relX, relY, relW, relH);
+
+  const imageB64 = composite.toDataURL('image/png');
+
+  editSendBtn.disabled = true;
+  editSendBtn.textContent = 'sending...';
+  editStatus.textContent = '';
+
+  try {
+    const resp = await fetch('/api/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: imageB64,
+        prompt,
+        model: activeModelName,
+        rect: { x: relX, y: relY, w: relW, h: relH },
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      showEditToast();
+      exitEditMode();
+    } else {
+      editStatus.textContent = data.error || 'server error';
+    }
+  } catch (err) {
+    editStatus.textContent = 'network error';
+  } finally {
+    editSendBtn.disabled = false;
+    editSendBtn.textContent = 'send \u23CE';
+  }
+}
+
+editSendBtn.addEventListener('click', sendEdit);
+editCancelBtn.addEventListener('click', exitEditMode);
+editPrompt.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendEdit(); }
+  else if (e.key === 'Escape') { exitEditMode(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editMode) exitEditMode();
+});
 
 // Resize viewer when panel opens/closes
 function resizeViewer() {

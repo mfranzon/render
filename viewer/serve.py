@@ -7,18 +7,23 @@ Serves a Three.js viewer that auto-loads the latest .glb.
 Code panel lets you edit and re-run scripts from the browser.
 """
 
+import base64
 import http.server
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+
+_server = None  # set in main(); used by the /api/shutdown endpoint
 
 PORT = 3123
 SKILL_DIR = Path(__file__).parent.parent
 VIEWER_DIR = Path(__file__).parent
 MODELS_DIR = VIEWER_DIR / "models"
+EDITS_DIR = VIEWER_DIR / "edits"
 SCRIPT_PATH = MODELS_DIR / "script.py"
 VENV_PYTHON = SKILL_DIR / ".venv" / "bin" / "python3"
 
@@ -58,8 +63,18 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/run":
             self.run_code()
+        elif self.path == "/api/edit":
+            self.save_edit()
+        elif self.path == "/api/shutdown":
+            self.shutdown_server()
         else:
             self.send_error(404)
+
+    def shutdown_server(self):
+        self.send_json({"ok": True})
+        # shutdown() must run off the request thread.
+        if _server is not None:
+            threading.Thread(target=_server.shutdown, daemon=True).start()
 
     def send_latest(self):
         glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
@@ -116,6 +131,41 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def save_edit(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length))
+        image_data_url = body.get("image", "")
+        prompt = (body.get("prompt") or "").strip()
+        model_name = body.get("model") or ""
+        rect = body.get("rect") or {}
+
+        if not prompt:
+            self.send_json({"ok": False, "error": "empty prompt"})
+            return
+        prefix = "data:image/png;base64,"
+        if not image_data_url.startswith(prefix):
+            self.send_json({"ok": False, "error": "invalid image"})
+            return
+        image_bytes = base64.b64decode(image_data_url[len(prefix):])
+
+        pending_dir = EDITS_DIR / "pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time() * 1000)
+        stem = str(ts)
+        (pending_dir / f"{stem}.png").write_bytes(image_bytes)
+
+        script_rel = f"viewer/models/{model_name}.py" if model_name else "viewer/models/script.py"
+        (pending_dir / f"{stem}.json").write_text(json.dumps({
+            "id": stem,
+            "prompt": prompt,
+            "model": model_name,
+            "script": script_rel,
+            "rect": rect,
+            "timestamp": ts,
+        }, indent=2))
+
+        self.send_json({"ok": True, "id": stem})
+
     def run_code(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length))
@@ -154,7 +204,7 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format, *args):
-        if not any(p in str(args) for p in ("/api/latest", "/api/list", "/api/model")):
+        if not any(p in str(args) for p in ("/api/latest", "/api/list", "/api/model", "/api/edit")):
             super().log_message(format, *args)
 
 
@@ -165,15 +215,19 @@ def main():
 
     MODELS_DIR.mkdir(exist_ok=True)
 
-    server = http.server.HTTPServer(("", port), ViewerHandler)
+    global _server
+    _server = http.server.HTTPServer(("", port), ViewerHandler)
     print(f"build123d viewer: http://localhost:{port}")
     print(f"models dir:       {MODELS_DIR}")
     print(f"python:           {get_python()}")
     print("waiting for .glb files...")
     try:
-        server.serve_forever()
+        _server.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
+    finally:
+        _server.server_close()
+        print("viewer shutdown")
 
 
 if __name__ == "__main__":
