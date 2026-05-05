@@ -51,6 +51,10 @@ The viewer starts automatically on first render. It includes:
 - Edit mode (`✎ edit`) — drag a box on the model, type an instruction, Claude applies it
 - Auto-reload on new models
 
+By default, `render("model", shape)` exports the authored build123d geometry
+exactly. For a quick shell/infill preview, use `render("model", shape,
+printable=True)` or `render_printable("model", shape)`.
+
 ## Region-based edits (✎)
 
 Click `✎ edit` in the menu, drag a rectangle over the part of the model you

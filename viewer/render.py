@@ -111,29 +111,45 @@ _INFILL_BUILDERS = {
 def render(
     name: str,
     shape,
-    wall_thickness: float = DEFAULT_WALL_THICKNESS,
-    infill_spacing: float = DEFAULT_INFILL_SPACING,
-    infill_thickness: float = DEFAULT_INFILL_THICKNESS,
+    wall_thickness: float | None = None,
+    infill_spacing: float | None = None,
+    infill_thickness: float | None = None,
     infill_pattern: str = DEFAULT_INFILL_PATTERN,
+    printable: bool = False,
     **kwargs,
 ):
-    """Export a shape as a printable shell with infill.
+    """Export a shape for the viewer.
+
+    By default this exports the authored CAD geometry exactly. Pass
+    ``printable=True`` or explicit wall/infill settings to export a generated
+    printable shell with infill instead.
 
     Args:
         name: filename (without extension)
         shape: any build123d Shape (Solid, Compound, Part, etc.)
-        wall_thickness: mm of outer wall thickness. 0 disables shelling.
-        infill_spacing: mm between infill walls. 0 disables infill.
-        infill_thickness: mm thickness of each infill wall.
+        wall_thickness: optional mm of outer wall thickness. 0 disables shelling.
+        infill_spacing: optional mm between infill walls. 0 disables infill.
+        infill_thickness: optional mm thickness of each infill wall.
         infill_pattern: "grid" | "triangles" | "honeycomb".
+        printable: when true, generate a printable shell/infill derivative.
         **kwargs: passed to export_gltf.
     """
     from build123d import export_gltf, export_step, export_stl, offset, Kind
 
     MODELS_DIR.mkdir(exist_ok=True)
 
-    printable = shape
-    if wall_thickness > 0:
+    export_shape = shape
+    make_printable = (
+        printable
+        or wall_thickness is not None
+        or infill_spacing is not None
+        or infill_thickness is not None
+    )
+    wall_thickness = DEFAULT_WALL_THICKNESS if wall_thickness is None else wall_thickness
+    infill_spacing = DEFAULT_INFILL_SPACING if infill_spacing is None else infill_spacing
+    infill_thickness = DEFAULT_INFILL_THICKNESS if infill_thickness is None else infill_thickness
+
+    if make_printable and wall_thickness > 0:
         try:
             # Build the result by subtracting empty pockets from the solid
             # shape. This guarantees a single connected solid with no fuse-
@@ -149,32 +165,32 @@ def render(
                 builder = _INFILL_BUILDERS.get(infill_pattern)
                 if builder is None:
                     print(f"unknown infill pattern '{infill_pattern}'; shell only")
-                    printable = shape - inner
+                    export_shape = shape - inner
                 else:
                     try:
                         infill = builder(shape, infill_spacing, infill_thickness)
                         if infill is None:
-                            printable = shape - inner
+                            export_shape = shape - inner
                         else:
                             pockets = inner - infill
-                            printable = shape - pockets
+                            export_shape = shape - pockets
                     except Exception as e:
                         print(f"infill failed ({e}); shell only")
-                        printable = shape - inner
+                        export_shape = shape - inner
             else:
-                printable = shape - inner
+                export_shape = shape - inner
         except Exception as e:
             print(f"shell failed ({e}); exporting solid")
-            printable = shape
+            export_shape = shape
 
     glb_out = MODELS_DIR / f"{name}.glb"
-    export_gltf(printable, str(glb_out), binary=True, **kwargs)
+    export_gltf(export_shape, str(glb_out), binary=True, **kwargs)
 
     step_out = MODELS_DIR / f"{name}.step"
-    export_step(printable, str(step_out))
+    export_step(export_shape, str(step_out))
 
     stl_out = MODELS_DIR / f"{name}.stl"
-    export_stl(printable, str(stl_out))
+    export_stl(export_shape, str(stl_out))
 
     # Save a copy of the calling script alongside the model
     caller = inspect.stack()[1].filename
@@ -189,3 +205,25 @@ def render(
     print(f"step:     {step_out}")
     print(f"stl:      {stl_out}")
     return glb_out
+
+
+def render_printable(
+    name: str,
+    shape,
+    wall_thickness: float = DEFAULT_WALL_THICKNESS,
+    infill_spacing: float = DEFAULT_INFILL_SPACING,
+    infill_thickness: float = DEFAULT_INFILL_THICKNESS,
+    infill_pattern: str = DEFAULT_INFILL_PATTERN,
+    **kwargs,
+):
+    """Export a generated shell/infill version for quick printable previews."""
+    return render(
+        name,
+        shape,
+        wall_thickness=wall_thickness,
+        infill_spacing=infill_spacing,
+        infill_thickness=infill_thickness,
+        infill_pattern=infill_pattern,
+        printable=True,
+        **kwargs,
+    )

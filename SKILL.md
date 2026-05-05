@@ -58,7 +58,9 @@ Look at `$ARGUMENTS`:
    - Imports `from build123d import *`
    - Imports `from viewer.render import render`
    - Builds the requested 3D model using build123d algebra or builder API
-   - Calls `render("model", result)` at the end to export it
+   - Calls `render("model", result)` at the end to export the exact CAD
+     geometry. Use `render("model", result, printable=True)` only when the
+     user asks for a shell/infill printable preview.
 
 3. **Run it**:
    ```bash
@@ -247,6 +249,12 @@ solid = revolve(sketch, axis=Axis.X, revolution_arc=360)
 # Colors — never use black; always use clear/light colors
 result.color = Color("steelblue")      # good
 result.color = Color(0.8, 0.2, 0.2)   # RGB floats — all channels above 0.25
+
+# Exact CAD export is the default.
+render("model", result)
+
+# Printable shell/infill preview, when explicitly wanted:
+render("printable_model", result, printable=True)
 ```
 
 ### Builder mode (for complex models)
