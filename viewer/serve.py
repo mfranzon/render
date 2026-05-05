@@ -1,7 +1,7 @@
 """Standalone viewer server for build123d models.
 
 Usage:
-    python serve.py [--port 3123]
+    python serve.py [--host 127.0.0.1] [--port 3123]
 
 Serves a Three.js viewer that auto-loads the latest .glb.
 Code panel lets you edit and re-run scripts from the browser.
@@ -20,6 +20,7 @@ from pathlib import Path
 _server = None  # set in main(); used by the /api/shutdown endpoint
 
 PORT = 3123
+HOST = "127.0.0.1"
 SKILL_DIR = Path(__file__).parent.parent
 VIEWER_DIR = Path(__file__).parent
 MODELS_DIR = VIEWER_DIR / "models"
@@ -210,14 +211,19 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     port = PORT
+    host = HOST
+    if "--host" in sys.argv:
+        host = sys.argv[sys.argv.index("--host") + 1]
     if "--port" in sys.argv:
         port = int(sys.argv[sys.argv.index("--port") + 1])
 
     MODELS_DIR.mkdir(exist_ok=True)
 
     global _server
-    _server = http.server.HTTPServer(("", port), ViewerHandler)
-    print(f"build123d viewer: http://localhost:{port}")
+    _server = http.server.HTTPServer((host, port), ViewerHandler)
+    shown_host = "localhost" if host in ("127.0.0.1", "localhost") else host
+    print(f"build123d viewer: http://{shown_host}:{port}")
+    print(f"bound to:          {host}:{port}")
     print(f"models dir:       {MODELS_DIR}")
     print(f"python:           {get_python()}")
     print("waiting for .glb files...")

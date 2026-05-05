@@ -94,6 +94,14 @@ can see exactly what you asked for before the change lands.
 
 No other dependencies — `setup.sh` creates an isolated venv and installs everything.
 
+## Security note
+
+The viewer binds to `127.0.0.1` by default because its code panel posts to
+`/api/run`, which writes and executes Python locally. Do not expose the viewer
+directly on a public network. If you intentionally need remote access, start it
+with an explicit host such as `--host 0.0.0.0` and put your own access controls
+in front of it.
+
 ## Manual usage
 
 You can also use the viewer standalone without Claude Code:
