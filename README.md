@@ -33,7 +33,7 @@ you: "/render a gear"
    Claude Code writes build123d Python code
         │
         ▼
-   Executes → exports .glb to viewer/models/
+   Executes → exports .glb / .step / .stl to viewer/models/
         │
         ▼
    Three.js viewer auto-loads the model
@@ -47,7 +47,7 @@ The viewer starts automatically on first render. It includes:
 - Model gallery (`▦ models`) to browse previous renders
 - Render mode toggle (solid / wireframe / x-ray)
 - Cross-section slice (`✂ slice`) — X/Y/Z axis, position slider, flip
-- STEP export (`⬳ STEP`) for sending to a slicer or CAD tool
+- STEP/STL export (`⬳ STEP`, `⬳ STL`) for sending to CAD or slicer tools
 - Edit mode (`✎ edit`) — drag a box on the model, type an instruction, Claude applies it
 - Auto-reload on new models
 
@@ -79,8 +79,8 @@ can see exactly what you asked for before the change lands.
 ├── viewer/
 │   ├── index.html     # Three.js viewer, hamburger menu, edit/slice tools
 │   ├── serve.py       # Local HTTP server (port 3123) + /api/edit endpoint
-│   ├── render.py      # render() helper for exporting .glb + .step
-│   ├── models/        # Generated .glb / .step files + scripts
+│   ├── render.py      # render() helper for exporting .glb + .step + .stl
+│   ├── models/        # Generated .glb / .step / .stl files + scripts
 │   └── edits/
 │       ├── pending/   # Queued ✎ edits waiting for Claude
 │       └── processed/ # Applied edits (kept for history)
