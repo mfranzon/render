@@ -128,7 +128,7 @@ def render(
         infill_pattern: "grid" | "triangles" | "honeycomb".
         **kwargs: passed to export_gltf.
     """
-    from build123d import export_gltf, export_step, offset, Kind
+    from build123d import export_gltf, export_step, export_stl, offset, Kind
 
     MODELS_DIR.mkdir(exist_ok=True)
 
@@ -173,6 +173,9 @@ def render(
     step_out = MODELS_DIR / f"{name}.step"
     export_step(printable, str(step_out))
 
+    stl_out = MODELS_DIR / f"{name}.stl"
+    export_stl(printable, str(stl_out))
+
     # Save a copy of the calling script alongside the model
     caller = inspect.stack()[1].filename
     if caller and Path(caller).is_file():
@@ -184,4 +187,5 @@ def render(
 
     print(f"rendered: {glb_out}")
     print(f"step:     {step_out}")
+    print(f"stl:      {stl_out}")
     return glb_out

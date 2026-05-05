@@ -2,6 +2,7 @@
 __pycache__/
 viewer/models/*.glb
 viewer/models/*.step
+viewer/models/*.py
 viewer/models/script.py
 .gstack/
 viewer/edits/

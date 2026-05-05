@@ -244,9 +244,9 @@ solid = extrude(sketch, amount=3)
 # Sweep, loft, revolve
 solid = revolve(sketch, axis=Axis.X, revolution_arc=360)
 
-# Colors
-result.color = Color("steelblue")
-result.color = Color(0.8, 0.2, 0.2)  # RGB floats
+# Colors — never use black; always use clear/light colors
+result.color = Color("steelblue")      # good
+result.color = Color(0.8, 0.2, 0.2)   # RGB floats — all channels above 0.25
 ```
 
 ### Builder mode (for complex models)
@@ -288,7 +288,7 @@ render("model", part.part)
 - Fillets may fail if radius is too large for the edge — use `filter_by(Axis.Z)` for vertical edges or smaller radius
 - Always use algebra mode unless the model genuinely requires builder contexts
 - Use a descriptive name in `render("gear", result)` — each name creates a separate model in the gallery. Avoid reusing "model" so the user can browse previous renders
-- Set colors for better visualization
+- **Never use black or near-black colors.** Always use clear, light, or saturated colors so the model is easy to see in the viewer. Good choices: `"steelblue"`, `"cornflowerblue"`, `"mediumseagreen"`, `"goldenrod"`, `"tomato"`, `"mediumpurple"`, `"coral"`, `"lightslategray"` — or RGB floats where all channels are above 0.25.
 - The viewer auto-reloads — the model appears in the browser within 1 second
 - If the script fails, show the error and fix the code — do NOT ask the user to debug
 
