@@ -17,7 +17,7 @@ Claude writes the parametric Python code, executes it, and the model appears in 
 
 ```bash
 # Clone into your Claude Code skills directory
-git clone https://github.com/YOUR_USER/claude-render-skill.git ~/.claude/skills/render
+git clone https://github.com/mfranzon/render.git ~/.claude/skills/render
 
 # First run installs build123d automatically (~30s)
 ```
@@ -93,6 +93,18 @@ can see exactly what you asked for before the change lands.
 - Claude Code
 
 No other dependencies — `setup.sh` creates an isolated venv and installs everything.
+
+`setup.sh` installs build123d from a pinned Git commit for reproducible
+bootstrap behavior. To test a different build123d source, run setup with
+`BUILD123D_SPEC="build123d @ git+https://github.com/gumyr/build123d.git@<sha>"`.
+
+## Smoke test
+
+After setup, you can verify the export path without starting the viewer:
+
+```bash
+PYTHONPATH=. .venv/bin/python3 scripts/smoke_render.py
+```
 
 ## Manual usage
 

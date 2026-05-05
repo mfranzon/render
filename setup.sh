@@ -4,6 +4,7 @@ set -e
 
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$SKILL_DIR/.venv"
+BUILD123D_SPEC="${BUILD123D_SPEC:-build123d @ git+https://github.com/gumyr/build123d.git@fdb2e70f90f08cdd37e2ee6ddf244529e1abddef}"
 
 # Fast check: marker file means setup already succeeded
 if [ -f "$VENV_DIR/.b3d-ready" ]; then
@@ -22,5 +23,5 @@ fi
 
 echo "Setting up render skill..."
 python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --quiet "build123d @ git+https://github.com/gumyr/build123d.git"
+"$VENV_DIR/bin/pip" install --quiet "$BUILD123D_SPEC"
 echo "READY"
