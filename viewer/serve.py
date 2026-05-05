@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import unquote
 from pathlib import Path
 
 _server = None  # set in main(); used by the /api/shutdown endpoint
@@ -26,6 +27,12 @@ MODELS_DIR = VIEWER_DIR / "models"
 EDITS_DIR = VIEWER_DIR / "edits"
 SCRIPT_PATH = MODELS_DIR / "script.py"
 VENV_PYTHON = SKILL_DIR / ".venv" / "bin" / "python3"
+
+DOWNLOAD_TYPES = {
+    ".glb": "model/gltf-binary",
+    ".step": "application/STEP",
+    ".stl": "model/stl",
+}
 
 
 def get_python():
@@ -79,16 +86,19 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
     def send_latest(self):
         glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
         code = SCRIPT_PATH.read_text() if SCRIPT_PATH.exists() else ""
-        step_name = None
+        exports = {}
         if glbs:
-            step_path = glbs[0].with_suffix(".step")
-            if step_path.exists():
-                step_name = step_path.name
+            for suffix in DOWNLOAD_TYPES:
+                export_path = glbs[0].with_suffix(suffix)
+                if export_path.exists():
+                    exports[suffix.lstrip(".")] = export_path.name
         data = {
             "file": glbs[0].name if glbs else None,
             "version": get_model_version(),
             "code": code,
-            "step": step_name,
+            "step": exports.get("step"),
+            "stl": exports.get("stl"),
+            "downloads": exports,
         }
         self.send_json(data)
 
@@ -104,29 +114,40 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         models = []
         for g in glbs:
             stat = g.stat()
-            step_exists = g.with_suffix(".step").exists()
             script = g.with_suffix(".py")
+            exports = {}
+            for suffix in DOWNLOAD_TYPES:
+                export_path = g.with_suffix(suffix)
+                if export_path.exists():
+                    exports[suffix.lstrip(".")] = export_path.name
             models.append({
                 "file": g.name,
                 "name": g.stem,
                 "mtime": int(stat.st_mtime * 1000),
                 "size": stat.st_size,
-                "step": g.with_suffix(".step").name if step_exists else None,
+                "step": exports.get("step"),
+                "stl": exports.get("stl"),
+                "downloads": exports,
                 "has_script": script.exists(),
             })
         self.send_json({"models": models})
 
     def download_file(self):
-        # /api/download/<name>.step
-        filename = self.path.split("/api/download/", 1)[1]
-        filepath = MODELS_DIR / filename
-        if not filepath.exists() or not filepath.suffix == ".step":
+        # /api/download/<name> for exported .glb, .step, or .stl files.
+        filename = unquote(self.path.split("/api/download/", 1)[1])
+        models_root = MODELS_DIR.resolve()
+        filepath = (MODELS_DIR / filename).resolve()
+        if (
+            not filepath.is_file()
+            or filepath.suffix.lower() not in DOWNLOAD_TYPES
+            or models_root not in (filepath, *filepath.parents)
+        ):
             self.send_error(404, "File not found")
             return
         data = filepath.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", "application/STEP")
-        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Type", DOWNLOAD_TYPES[filepath.suffix.lower()])
+        self.send_header("Content-Disposition", f'attachment; filename="{filepath.name}"')
         self.send_header("Content-Length", len(data))
         self.end_headers()
         self.wfile.write(data)

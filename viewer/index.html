@@ -305,6 +305,7 @@
     <button id="toggle-slice" title="Cross-section slice">&#x2702; slice</button>
     <button id="edit-area" title="Select an area to edit with Claude">&#x270E; edit</button>
     <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
+    <button id="download-stl" disabled title="Export STL file">&#x2B73; STL</button>
     <button id="toggle-code">&lt;/&gt; code</button>
     <button id="shutdown-server" title="Stop the viewer server">&#x23FB; stop</button>
   </div>
@@ -662,9 +663,11 @@ async function poll() {
         }
       }
     }
-    // Update STEP download button
+    // Update artifact download buttons
     currentStep = data.step || null;
+    currentStl = data.stl || null;
     stepBtn.disabled = !currentStep;
+    stlBtn.disabled = !currentStl;
     if (!currentFile) updateHud(null, 'waiting');
   } catch (e) {
     // server not ready
@@ -673,13 +676,21 @@ async function poll() {
 setInterval(poll, 1000);
 poll();
 
-// STEP download
+// Artifact downloads
 const stepBtn = document.getElementById('download-step');
+const stlBtn = document.getElementById('download-stl');
 let currentStep = null;
+let currentStl = null;
 
 stepBtn.addEventListener('click', () => {
   if (currentStep) {
     window.location.href = '/api/download/' + currentStep;
+  }
+});
+
+stlBtn.addEventListener('click', () => {
+  if (currentStl) {
+    window.location.href = '/api/download/' + currentStl;
   }
 });
 
@@ -862,9 +873,11 @@ async function loadGalleryModel(m) {
     el.classList.toggle('active', el.dataset.name === m.name);
   });
 
-  // Update STEP button
+  // Update artifact download buttons
   currentStep = m.step || null;
+  currentStl = m.stl || null;
   stepBtn.disabled = !currentStep;
+  stlBtn.disabled = !currentStl;
 
   // Load this model's script into the code editor
   try {
