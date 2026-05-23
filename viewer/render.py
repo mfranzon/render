@@ -20,7 +20,26 @@ import inspect
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+# Patch fontTools BEFORE anything tries to import build123d. build123d eagerly
+# walks every system-font folder at import time and crashes on un-parseable
+# files (e.g. mstmc.ttf on Windows). _font_patch makes those files a no-op so
+# the rest of build123d's font registration succeeds. The import has side
+# effects only — the symbol itself is unused.
+from . import _font_patch as _font_patch  # noqa: F401
+
+# Force UTF-8 on stdout/stderr so status lines and exception messages
+# containing em-dashes, Japanese, etc. don't crash on Windows's default
+# cp932 console. Errors are replaced rather than raised so render() can
+# never be killed by an unencodable status string.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        if _stream.encoding and _stream.encoding.lower() != "utf-8":
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Outputs land in <project_root>/output/.
 # render.py lives at <root>/.claude/skills/render/viewer/render.py, so the
@@ -378,12 +397,14 @@ def render(
         except Exception:
             pass
 
-    # Save a copy of the calling script alongside the model
+    # Save a copy of the calling script alongside the model. Force UTF-8
+    # so non-ASCII content (em-dashes, Japanese comments, etc.) round-trips
+    # cleanly on Windows where the platform default is cp932.
     caller = inspect.stack()[1].filename
     if caller and Path(caller).is_file():
         try:
-            source = Path(caller).read_text()
-            (out_dir / f"{name}.py").write_text(source)
+            source = Path(caller).read_text(encoding="utf-8")
+            (out_dir / f"{name}.py").write_text(source, encoding="utf-8")
         except Exception as e:
             print(f"could not save caller script ({e})")
 

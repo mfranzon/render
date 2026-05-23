@@ -136,8 +136,8 @@ PROJECT=~/my-project
 NAME=sample_cube
 mkdir -p "$PROJECT/output/$NAME"
 cat > "$PROJECT/output/$NAME/$NAME.py" << EOF
+from viewer.render import render  # import first — installs the font shim
 from build123d import *
-from viewer.render import render
 
 box = Box(10, 10, 10) - Cylinder(4, 12)
 box.color = Color("steelblue")

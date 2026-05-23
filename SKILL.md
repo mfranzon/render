@@ -84,8 +84,10 @@ Look at `$ARGUMENTS`:
 
 3. **Write the script**: Create `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.py`
    (create the `<name>/` directory if needed). The script must:
-   - Import `from build123d import *`
-   - Import `from viewer.render import render`
+   - Import `from viewer.render import render` **first** (this installs a
+     defensive shim so build123d's import-time font scan tolerates broken
+     system fonts on Windows)
+   - Then import `from build123d import *`
    - Build the requested 3D model using build123d algebra or builder API
    - Call `render("<name>", result)` at the end (the name passed to `render`
      must match the directory). Use `render("<name>", result, printable=True)`
@@ -253,8 +255,8 @@ empty, the tick is a no-op.
 
 ### Algebra mode (preferred — simpler)
 ```python
+from viewer.render import render  # import first — installs the font shim
 from build123d import *
-from viewer.render import render
 
 # Primitives
 box = Box(width, depth, height)
@@ -300,8 +302,8 @@ render("printable_model", result, printable=True)
 
 ### Builder mode (for complex models)
 ```python
+from viewer.render import render  # import first — installs the font shim
 from build123d import *
-from viewer.render import render
 
 with BuildPart() as part:
     Box(10, 10, 5)

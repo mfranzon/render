@@ -42,7 +42,17 @@ fi
 
 echo "Setting up render skill..."
 python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --quiet \
+
+# Resolve pip + the venv's site-packages dir — Windows uses Scripts/, *nix uses bin/.
+if   [ -f "$VENV_DIR/bin/pip" ];           then PIP="$VENV_DIR/bin/pip";          PY="$VENV_DIR/bin/python3"
+elif [ -f "$VENV_DIR/Scripts/pip.exe" ];   then PIP="$VENV_DIR/Scripts/pip.exe";  PY="$VENV_DIR/Scripts/python.exe"
+else
+    echo "ERROR: cannot find pip in $VENV_DIR (looked in bin/ and Scripts/)" >&2
+    exit 1
+fi
+
+"$PIP" install --quiet \
     "build123d @ git+https://github.com/gumyr/build123d.git" \
     pyvista
+
 echo "READY"
