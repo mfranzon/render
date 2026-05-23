@@ -29,8 +29,31 @@ http://localhost:3123.
 bash ${CLAUDE_SKILL_DIR}/setup.sh
 ```
 
-If this prints `READY`, continue. If not, the setup will install build123d
-into the skill's own venv (one-time, ~30s).
+The script always prints `READY` once the venv is installed (one-time, ~30s).
+
+**If the output also contains `ENV_CREATED`**, the project's `.env` file was
+just initialised from `.env.example`. Before continuing, ask the user which
+output formats to generate using `AskUserQuestion`, and then write the choice
+to `${CLAUDE_PROJECT_DIR}/.env`. Use this exact question:
+
+- **question**: "生成する出力フォーマットを選択してください"
+- **header**: "Formats"
+- **multiSelect**: false
+- **options** (label / description / preview):
+  1. `glb, stl, fbx` (Recommended) — viewer + 3D print + game engine
+  2. `glb, step, stl, obj, fbx` — every supported format
+  3. `glb, step, stl, obj` — original default (no FBX)
+  4. `glb` — viewer only
+
+After the user answers, update the `RENDER_FORMATS=...` line in
+`${CLAUDE_PROJECT_DIR}/.env` with the chosen comma-separated tokens, e.g.:
+
+```bash
+sed -i 's/^RENDER_FORMATS=.*/RENDER_FORMATS=glb,stl,fbx/' ${CLAUDE_PROJECT_DIR}/.env
+```
+
+If `ENV_CREATED` was **not** printed, the `.env` already exists and the user
+has already chosen — skip the question entirely.
 
 ## Detect mode
 

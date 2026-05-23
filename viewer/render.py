@@ -1,12 +1,97 @@
-"""Render helper — exports build123d shapes to .glb + .step for the viewer."""
+"""Render helper — exports build123d shapes to .glb + .step for the viewer.
+
+Output formats are selectable via the RENDER_FORMATS environment variable
+(comma-separated list). Default: "glb,step,stl,obj". Supported tokens:
+    glb   — viewer-ready glTF binary (also used as FBX source)
+    step  — STEP CAD interchange
+    stl   — triangle mesh (3D-print ready)
+    obj   — Wavefront OBJ (via trimesh, derived from STL)
+    fbx   — Autodesk FBX (via Blender headless, derived from GLB)
+FBX export uses `blender` on PATH; set BLENDER_EXE to override the path.
+
+These variables can also be defined in a ``.env`` file at the project root
+(``<root>/.env``). Lines like ``KEY=value`` are loaded at import time, with
+``#`` for comments. Real environment variables always take precedence over
+the file, so command-line overrides still work.
+"""
 
 import inspect
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 # Outputs land in <project_root>/output/.
 # render.py lives at <root>/.claude/skills/render/viewer/render.py, so the
 # project root is parents[4].
-MODELS_DIR = Path(__file__).resolve().parents[4] / "output"
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+MODELS_DIR = PROJECT_ROOT / "output"
+
+DEFAULT_FORMATS = ("glb", "step", "stl", "obj")
+
+
+def _load_dotenv(env_path: Path = PROJECT_ROOT / ".env") -> None:
+    """Tiny .env loader — KEY=value lines, # comments, ignores blanks.
+
+    The .env file is **required**. If it does not exist, raise a clear
+    error pointing the user at the .env.example template. Real environment
+    variables override file values, so command-line overrides still work.
+    """
+    if not env_path.is_file():
+        raise FileNotFoundError(
+            f".env not found at {env_path}. Copy .env.example to .env and "
+            "edit as needed."
+        )
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
+def _selected_formats() -> set[str]:
+    raw = os.environ.get("RENDER_FORMATS")
+    if raw is None:
+        return set(DEFAULT_FORMATS)
+    return {f.strip().lower() for f in raw.split(",") if f.strip()}
+
+
+def _export_fbx_via_blender(glb_path: Path, fbx_path: Path) -> None:
+    """Convert a .glb to .fbx by driving Blender in --background mode."""
+    blender_exe = os.environ.get("BLENDER_EXE") or shutil.which("blender")
+    if not blender_exe or not Path(blender_exe).is_file():
+        raise FileNotFoundError(
+            "Blender not found on PATH — set BLENDER_EXE env var to the "
+            "blender executable."
+        )
+    glb_norm = str(glb_path).replace("\\", "/")
+    fbx_norm = str(fbx_path).replace("\\", "/")
+    script = (
+        "import bpy\n"
+        "bpy.ops.wm.read_factory_settings(use_empty=True)\n"
+        f"bpy.ops.import_scene.gltf(filepath=r'{glb_norm}')\n"
+        f"bpy.ops.export_scene.fbx(filepath=r'{fbx_norm}', "
+        "path_mode='COPY', embed_textures=True)\n"
+    )
+    result = subprocess.run(
+        [blender_exe, "--background", "--python-expr", script],
+        capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        tail_out = (result.stdout or "")[-400:]
+        tail_err = (result.stderr or "")[-400:]
+        raise RuntimeError(
+            f"blender fbx export failed (exit {result.returncode})\n"
+            f"stdout tail: {tail_out}\nstderr tail: {tail_err}"
+        )
 
 
 DEFAULT_WALL_THICKNESS = 1.2   # mm — typical FDM perimeter width
@@ -187,23 +272,70 @@ def render(
             print(f"shell failed ({e}); exporting solid")
             export_shape = shape
 
-    glb_out = out_dir / f"{name}.glb"
-    export_gltf(export_shape, str(glb_out), binary=True, **kwargs)
+    formats = _selected_formats()
+    # OBJ derives from STL, FBX derives from GLB — make sure the source exists
+    # even when the user didn't explicitly request it (kept as temp file).
+    needs_stl_tmp = "obj" in formats and "stl" not in formats
+    needs_glb_tmp = "fbx" in formats and "glb" not in formats
+    results: dict[str, Path] = {}
+    tmp_files: list[Path] = []
 
-    step_out = out_dir / f"{name}.step"
-    export_step(export_shape, str(step_out))
+    # --- GLB ---
+    if "glb" in formats or needs_glb_tmp:
+        glb_out = out_dir / f"{name}.glb"
+        export_gltf(export_shape, str(glb_out), binary=True, **kwargs)
+        if "glb" in formats:
+            results["glb"] = glb_out
+        else:
+            tmp_files.append(glb_out)
+        glb_source = glb_out
+    else:
+        glb_source = None
 
-    stl_out = out_dir / f"{name}.stl"
-    export_stl(export_shape, str(stl_out))
+    # --- STEP ---
+    if "step" in formats:
+        step_out = out_dir / f"{name}.step"
+        export_step(export_shape, str(step_out))
+        results["step"] = step_out
 
-    obj_out = out_dir / f"{name}.obj"
-    try:
-        import trimesh
-        mesh = trimesh.load(str(stl_out))
-        mesh.export(str(obj_out))
-        print(f"obj:      {obj_out}")
-    except Exception as e:
-        print(f"obj export failed ({e})")
+    # --- STL ---
+    if "stl" in formats or needs_stl_tmp:
+        stl_out = out_dir / f"{name}.stl"
+        export_stl(export_shape, str(stl_out))
+        if "stl" in formats:
+            results["stl"] = stl_out
+        else:
+            tmp_files.append(stl_out)
+        stl_source = stl_out
+    else:
+        stl_source = None
+
+    # --- OBJ (derived from STL via trimesh) ---
+    if "obj" in formats:
+        obj_out = out_dir / f"{name}.obj"
+        try:
+            import trimesh
+            mesh = trimesh.load(str(stl_source))
+            mesh.export(str(obj_out))
+            results["obj"] = obj_out
+        except Exception as e:
+            print(f"obj export failed ({e})")
+
+    # --- FBX (derived from GLB via Blender headless) ---
+    if "fbx" in formats:
+        fbx_out = out_dir / f"{name}.fbx"
+        try:
+            _export_fbx_via_blender(glb_source, fbx_out)
+            results["fbx"] = fbx_out
+        except Exception as e:
+            print(f"fbx export failed ({e})")
+
+    # Clean up any temp source files we generated only to feed FBX/OBJ
+    for tmp in tmp_files:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
 
     # Save a copy of the calling script alongside the model
     caller = inspect.stack()[1].filename
@@ -214,10 +346,10 @@ def render(
         except Exception as e:
             print(f"could not save caller script ({e})")
 
-    print(f"rendered: {glb_out}")
-    print(f"step:     {step_out}")
-    print(f"stl:      {stl_out}")
-    return glb_out
+    for fmt in ("glb", "step", "stl", "obj", "fbx"):
+        if fmt in results:
+            print(f"{fmt}: {results[fmt]}")
+    return results.get("glb")
 
 
 def render_printable(
