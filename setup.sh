@@ -42,5 +42,7 @@ fi
 
 echo "Setting up render skill..."
 python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --quiet "build123d @ git+https://github.com/gumyr/build123d.git"
+"$VENV_DIR/bin/pip" install --quiet \
+    "build123d @ git+https://github.com/gumyr/build123d.git" \
+    pyvista
 echo "READY"

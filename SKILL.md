@@ -41,9 +41,9 @@ to `${CLAUDE_PROJECT_DIR}/.env`. Use this exact question:
 - **multiSelect**: false
 - **options** (label / description / preview):
   1. `glb, stl, fbx` (Recommended) — viewer + 3D print + game engine
-  2. `glb, step, stl, obj, fbx` — every supported format
+  2. `glb, step, stl, obj, fbx, png` — every supported format (incl. README preview)
   3. `glb, step, stl, obj` — original default (no FBX)
-  4. `glb` — viewer only
+  4. `glb, png` — viewer + static preview image for README
 
 After the user answers, update the `RENDER_FORMATS=...` line in
 `${CLAUDE_PROJECT_DIR}/.env` with the chosen comma-separated tokens, e.g.:
@@ -93,7 +93,8 @@ Look at `$ARGUMENTS`:
 
    Each model owns its own input script, so parallel `/render` invocations
    targeting different names never collide. Exports land alongside the script:
-   `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.{glb,step,stl,obj,py}`.
+   `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.{glb,step,stl,obj,fbx,png,py}`
+   (only the formats listed in `RENDER_FORMATS` are produced).
 
 4. **Run it**:
    ```bash

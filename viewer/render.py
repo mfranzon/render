@@ -7,6 +7,7 @@ Output formats are selectable via the RENDER_FORMATS environment variable
     stl   — triangle mesh (3D-print ready)
     obj   — Wavefront OBJ (via trimesh, derived from STL)
     fbx   — Autodesk FBX (via Blender headless, derived from GLB)
+    png   — static preview image (via pyvista headless, derived from STL)
 FBX export uses `blender` on PATH; set BLENDER_EXE to override the path.
 
 These variables can also be defined in a ``.env`` file at the project root
@@ -62,6 +63,37 @@ def _selected_formats() -> set[str]:
     if raw is None:
         return set(DEFAULT_FORMATS)
     return {f.strip().lower() for f in raw.split(",") if f.strip()}
+
+
+def _export_png_via_pyvista(
+    stl_path: Path,
+    png_path: Path,
+    window_size: tuple[int, int] = (1024, 1024),
+    color: str = "steelblue",
+) -> None:
+    """Render an STL to a static PNG preview via headless pyvista.
+
+    The viewport is sized to the mesh and tilted to an isometric-ish view so
+    the output is suitable for embedding in a README without further editing.
+    """
+    try:
+        import pyvista as pv
+    except ImportError as e:
+        raise RuntimeError(
+            "pyvista is not installed — re-run setup.sh or "
+            "`pip install pyvista` in the render venv."
+        ) from e
+
+    mesh = pv.read(str(stl_path))
+    plotter = pv.Plotter(off_screen=True, window_size=window_size)
+    plotter.add_mesh(mesh, color=color, smooth_shading=True, show_edges=False)
+    try:
+        plotter.enable_anti_aliasing("ssaa")
+    except Exception:
+        pass
+    plotter.camera_position = "iso"
+    plotter.screenshot(str(png_path))
+    plotter.close()
 
 
 def _export_fbx_via_blender(glb_path: Path, fbx_path: Path) -> None:
@@ -273,9 +305,9 @@ def render(
             export_shape = shape
 
     formats = _selected_formats()
-    # OBJ derives from STL, FBX derives from GLB — make sure the source exists
-    # even when the user didn't explicitly request it (kept as temp file).
-    needs_stl_tmp = "obj" in formats and "stl" not in formats
+    # OBJ and PNG derive from STL; FBX derives from GLB. Make sure the source
+    # exists even when the user didn't explicitly request it (kept as temp).
+    needs_stl_tmp = ("obj" in formats or "png" in formats) and "stl" not in formats
     needs_glb_tmp = "fbx" in formats and "glb" not in formats
     results: dict[str, Path] = {}
     tmp_files: list[Path] = []
@@ -330,6 +362,15 @@ def render(
         except Exception as e:
             print(f"fbx export failed ({e})")
 
+    # --- PNG (derived from STL via pyvista headless) ---
+    if "png" in formats:
+        png_out = out_dir / f"{name}.png"
+        try:
+            _export_png_via_pyvista(stl_source, png_out)
+            results["png"] = png_out
+        except Exception as e:
+            print(f"png export failed ({e})")
+
     # Clean up any temp source files we generated only to feed FBX/OBJ
     for tmp in tmp_files:
         try:
@@ -346,7 +387,7 @@ def render(
         except Exception as e:
             print(f"could not save caller script ({e})")
 
-    for fmt in ("glb", "step", "stl", "obj", "fbx"):
+    for fmt in ("glb", "step", "stl", "obj", "fbx", "png"):
         if fmt in results:
             print(f"{fmt}: {results[fmt]}")
     return results.get("glb")

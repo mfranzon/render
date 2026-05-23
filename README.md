@@ -55,6 +55,26 @@ By default, `render("model", shape)` exports the authored build123d geometry
 exactly. For a quick shell/infill preview, use `render("model", shape,
 printable=True)` or `render_printable("model", shape)`.
 
+### Output formats
+
+Set `RENDER_FORMATS` in `.env` (comma-separated) to choose what gets written
+alongside each model:
+
+| Token | What it produces | Notes |
+|---|---|---|
+| `glb`  | `.glb` (viewer + game engines) | always cheap |
+| `step` | `.step` (CAD interchange) | exact B-rep |
+| `stl`  | `.stl` (3D-printing) | triangle mesh |
+| `obj`  | `.obj` (game engines, DCC tools) | derived from STL via trimesh |
+| `fbx`  | `.fbx` (Unreal, Maya, etc.) | requires Blender on PATH |
+| `png`  | `.png` static preview image | derived from STL via headless pyvista; useful for README embeds |
+
+Example — produce a viewer file and a README-ready preview image:
+
+```bash
+RENDER_FORMATS=glb,png
+```
+
 ## Region-based edits (✎)
 
 Click `✎ edit` in the menu, drag a rectangle over the part of the model you
