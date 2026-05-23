@@ -54,20 +54,30 @@ Look at `$ARGUMENTS`:
    lsof -i :3123 -t >/dev/null 2>&1 && echo "VIEWER_RUNNING" || (${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/serve.py &>/tmp/build123d-viewer.log & sleep 1 && echo "VIEWER_STARTED" && open http://localhost:3123)
    ```
 
-2. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/script.py` that:
-   - Imports `from build123d import *`
-   - Imports `from viewer.render import render`
-   - Builds the requested 3D model using build123d algebra or builder API
-   - Calls `render("model", result)` at the end to export the exact CAD
-     geometry. Use `render("model", result, printable=True)` only when the
-     user asks for a shell/infill printable preview.
+2. **Pick a descriptive name** for the model (snake_case, e.g. `wing_bracket`,
+   `gear_20t`). This name owns its own directory and is what the user sees in
+   the gallery. Avoid reusing names that already exist under
+   `${CLAUDE_PROJECT_DIR}/output/` unless the user wants to overwrite.
 
-3. **Run it**:
+3. **Write the script**: Create `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.py`
+   (create the `<name>/` directory if needed). The script must:
+   - Import `from build123d import *`
+   - Import `from viewer.render import render`
+   - Build the requested 3D model using build123d algebra or builder API
+   - Call `render("<name>", result)` at the end (the name passed to `render`
+     must match the directory). Use `render("<name>", result, printable=True)`
+     only when the user asks for a shell/infill printable preview.
+
+   Each model owns its own input script, so parallel `/render` invocations
+   targeting different names never collide. Exports land alongside the script:
+   `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.{glb,step,stl,obj,py}`.
+
+4. **Run it**:
    ```bash
-   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/script.py
+   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_PROJECT_DIR}/output/<name>/<name>.py
    ```
 
-4. **Confirm** the model was rendered and tell the user to check http://localhost:3123.
+5. **Confirm** the model was rendered and tell the user to check http://localhost:3123.
    The viewer auto-reloads — the model appears within 1 second.
    The user can open the code panel (</> button) in the browser to tweak parameters
    and re-render with Ctrl+Enter. The slice (✂) button enables a cross-section
@@ -75,7 +85,7 @@ Look at `$ARGUMENTS`:
    lets the user drag a box over an area, type an instruction, and queue it for
    this Claude session to modify that part of the model.
 
-5. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
+6. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
    idempotent — calling it again just resets the timer). Call `ScheduleWakeup`
    with `delaySeconds: 60`, `prompt: "/loop /render apply pending edits"`, and
    a short `reason` like "auto-apply ✎ edits from viewer". Tell the user one
@@ -116,22 +126,28 @@ Look at `$ARGUMENTS`:
    - Features to add (fillets, chamfers, patterns)
    - Which build123d API to use (algebra for simple, builder for complex)
 
-6. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/script.py`.
-   Include a comment block at the top noting:
+6. **Pick a descriptive name** (snake_case, e.g. `bracket_v1`) for the model.
+   Avoid reusing names that already exist under `${CLAUDE_PROJECT_DIR}/output/`
+   unless the user wants to overwrite.
+
+7. **Write the script**: Create `${CLAUDE_PROJECT_DIR}/output/<name>/<name>.py`
+   (create the `<name>/` directory if needed). The script must call
+   `render("<name>", result)` with the same name. Include a comment block at
+   the top noting:
    - Source: reference image
    - Estimated/researched dimensions
    - Any assumptions made
 
-7. **Run it**:
+8. **Run it**:
    ```bash
-   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/script.py
+   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_PROJECT_DIR}/output/<name>/<name>.py
    ```
 
-8. **Confirm** the model was rendered and tell the user to check
+9. **Confirm** the model was rendered and tell the user to check
    http://localhost:3123. Mention what dimensions you used and any assumptions,
    so the user can adjust in the code panel.
 
-9. **Auto-arm the edit-apply loop** (same as text-mode step 5). Call
+10. **Auto-arm the edit-apply loop** (same as text-mode step 6). Call
    `ScheduleWakeup` with `delaySeconds: 60`, `prompt: "/loop /render apply
    pending edits"`, and a short `reason`. Tell the user: "auto-apply loop
    armed — ✎ edits will be picked up within ~60s".
@@ -175,9 +191,10 @@ Multiple edits can queue up. Process them oldest-first, then move each pair to
       build123d feature in the code corresponds to that region (a specific
       hole, fillet, chamfer, boss, wall, pixel, etc.).
 
-   d. **Read the model script** at `${CLAUDE_SKILL_DIR}/<script>` (from the
-      metadata). If `model` is empty or the file is missing, fall back to
-      `viewer/models/script.py`.
+   d. **Read the model script** at `${CLAUDE_PROJECT_DIR}/<script>` (from the
+      metadata — the `script` field is project-root-relative, e.g.
+      `output/<name>/<name>.py`). If `model` is empty or the file is missing,
+      report the edit as un-applicable (there is no shared script to modify).
 
    e. **Modify the script** to address `prompt` *for the highlighted region
       only*. Keep all other geometry unchanged. If the mapping is ambiguous
@@ -186,7 +203,7 @@ Multiple edits can queue up. Process them oldest-first, then move each pair to
 
    f. **Run it**:
       ```bash
-      PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/<script>
+      PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_PROJECT_DIR}/<script>
       ```
 
    g. **Move the edit files out of the queue**:

@@ -650,8 +650,9 @@ async function poll() {
     const data = await resp.json();
     if (data.file && data.version !== modelVersion) {
       modelVersion = data.version;
-      activeModelName = data.file.replace(/\.glb$/, '');
-      loadModel('/models/' + data.file + '?t=' + Date.now(), data.file);
+      // Prefer the server-provided name; fall back to deriving it from the path.
+      activeModelName = data.name || data.file.replace(/\.glb$/, '').split('/').pop();
+      loadModel('/models/' + data.file + '?t=' + Date.now(), activeModelName + '.glb');
       if (galleryPanel.classList.contains('open')) refreshGallery();
       // Load the source code
       if (data.code) {
@@ -744,7 +745,7 @@ async function runCode() {
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.value }),
+      body: JSON.stringify({ code: editor.value, model: activeModelName }),
     });
     const data = await resp.json();
     if (data.ok) {
@@ -855,7 +856,7 @@ async function refreshGallery() {
 
 async function loadGalleryModel(m) {
   activeModelName = m.name;
-  loadModel('/models/' + m.file + '?t=' + Date.now(), m.file);
+  loadModel('/models/' + m.file + '?t=' + Date.now(), m.name + '.glb');
 
   // Update active highlight
   galleryList.querySelectorAll('.gallery-item').forEach(el => {

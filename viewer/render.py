@@ -3,7 +3,10 @@
 import inspect
 from pathlib import Path
 
-MODELS_DIR = Path(__file__).parent / "models"
+# Outputs land in <project_root>/output/.
+# render.py lives at <root>/.claude/skills/render/viewer/render.py, so the
+# project root is parents[4].
+MODELS_DIR = Path(__file__).resolve().parents[4] / "output"
 
 
 DEFAULT_WALL_THICKNESS = 1.2   # mm — typical FDM perimeter width
@@ -136,7 +139,8 @@ def render(
     """
     from build123d import export_gltf, export_step, export_stl, offset, Kind
 
-    MODELS_DIR.mkdir(exist_ok=True)
+    out_dir = MODELS_DIR / name
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     export_shape = shape
     make_printable = (
@@ -183,21 +187,30 @@ def render(
             print(f"shell failed ({e}); exporting solid")
             export_shape = shape
 
-    glb_out = MODELS_DIR / f"{name}.glb"
+    glb_out = out_dir / f"{name}.glb"
     export_gltf(export_shape, str(glb_out), binary=True, **kwargs)
 
-    step_out = MODELS_DIR / f"{name}.step"
+    step_out = out_dir / f"{name}.step"
     export_step(export_shape, str(step_out))
 
-    stl_out = MODELS_DIR / f"{name}.stl"
+    stl_out = out_dir / f"{name}.stl"
     export_stl(export_shape, str(stl_out))
+
+    obj_out = out_dir / f"{name}.obj"
+    try:
+        import trimesh
+        mesh = trimesh.load(str(stl_out))
+        mesh.export(str(obj_out))
+        print(f"obj:      {obj_out}")
+    except Exception as e:
+        print(f"obj export failed ({e})")
 
     # Save a copy of the calling script alongside the model
     caller = inspect.stack()[1].filename
     if caller and Path(caller).is_file():
         try:
             source = Path(caller).read_text()
-            (MODELS_DIR / f"{name}.py").write_text(source)
+            (out_dir / f"{name}.py").write_text(source)
         except Exception as e:
             print(f"could not save caller script ({e})")
 

@@ -33,7 +33,7 @@ you: "/render a gear"
    Claude Code writes build123d Python code
         │
         ▼
-   Executes → exports .glb to viewer/models/
+   Executes → exports .glb to <project_root>/output/<name>/
         │
         ▼
    Three.js viewer auto-loads the model
@@ -66,7 +66,8 @@ a screenshot with the red selection rectangle and queues it under
 Claude picks up queued edits in one of two ways:
 
 - **On-demand**: type `/render apply pending edits` — Claude processes every
-  queued edit, modifies the relevant `viewer/models/<name>.py`, re-runs it,
+  queued edit, modifies the relevant `output/<name>/<name>.py` at the project
+  root, re-runs it,
   and the viewer reloads.
 - **Hands-free**: the first time you run `/render` in a session, Claude
   auto-arms a loop (`/loop /render apply pending edits`) with a file-watcher
@@ -84,7 +85,7 @@ can see exactly what you asked for before the change lands.
 │   ├── index.html     # Three.js viewer, hamburger menu, edit/slice tools
 │   ├── serve.py       # Local HTTP server (port 3123) + /api/edit endpoint
 │   ├── render.py      # render() helper for exporting .glb + .step
-│   ├── models/        # Generated .glb / .step files + scripts
+│   │                  # (writes to <project_root>/output/, not under viewer/)
 │   └── edits/
 │       ├── pending/   # Queued ✎ edits waiting for Claude
 │       └── processed/ # Applied edits (kept for history)
@@ -103,19 +104,26 @@ No other dependencies — `setup.sh` creates an isolated venv and installs every
 You can also use the viewer standalone without Claude Code:
 
 ```bash
+# Each model owns its own directory: <project_root>/output/<name>/<name>.py
+# is both the input script and the saved record. The project root is computed
+# as four parents up from render.py (the directory containing .claude/).
+
 # Start the viewer
 ~/.claude/skills/render/.venv/bin/python3 ~/.claude/skills/render/viewer/serve.py
 
-# Write a script
-cat > ~/.claude/skills/render/viewer/models/script.py << 'EOF'
+# Pick a name and write its script (PROJECT here = the dir that contains .claude/)
+PROJECT=~/my-project
+NAME=sample_cube
+mkdir -p "$PROJECT/output/$NAME"
+cat > "$PROJECT/output/$NAME/$NAME.py" << EOF
 from build123d import *
 from viewer.render import render
 
 box = Box(10, 10, 10) - Cylinder(4, 12)
 box.color = Color("steelblue")
-render("model", box)
+render("$NAME", box)
 EOF
 
 # Run it
-PYTHONPATH=~/.claude/skills/render ~/.claude/skills/render/.venv/bin/python3 ~/.claude/skills/render/viewer/models/script.py
+PYTHONPATH=~/.claude/skills/render ~/.claude/skills/render/.venv/bin/python3 "$PROJECT/output/$NAME/$NAME.py"
 ```
