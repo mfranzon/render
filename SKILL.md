@@ -8,7 +8,7 @@ description: |
   Also handles "apply pending edit" — when the user selects an area in the viewer
   and submits a change request, Claude reads viewer/edits/latest.{png,json} and
   modifies the current model's script.
-argument-hint: [image path and/or description of the 3D model]
+argument-hint: "[image path and/or description of the 3D model]"
 allowed-tools:
   - Bash
   - Write
