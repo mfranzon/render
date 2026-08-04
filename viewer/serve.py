@@ -16,10 +16,13 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import unquote
 
 _server = None  # set in main(); used by the /api/shutdown endpoint
 
 PORT = 3123
+HOST = "127.0.0.1"  # loopback only; the viewer is a local tool
+RUN_TIMEOUT = 300    # seconds; heavy infill/boolean models can take minutes
 SKILL_DIR = Path(__file__).parent.parent
 VIEWER_DIR = Path(__file__).parent
 MODELS_DIR = VIEWER_DIR / "models"
@@ -33,12 +36,21 @@ def get_python():
     return str(VENV_PYTHON) if VENV_PYTHON.exists() else "python3"
 
 
+def sorted_glbs():
+    """Return exported .glb files, newest first."""
+    return sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
+
+
+def step_sibling(glb):
+    """Return the name of the .step exported next to a .glb, or None."""
+    step = glb.with_suffix(".step")
+    return step.name if step.exists() else None
+
+
 def get_model_version():
     """Return current version based on latest glb mtime."""
-    glbs = list(MODELS_DIR.glob("*.glb"))
-    if not glbs:
-        return 0
-    return int(max(os.path.getmtime(f) for f in glbs) * 1000)
+    glbs = sorted_glbs()
+    return int(os.path.getmtime(glbs[0]) * 1000) if glbs else 0
 
 
 class ViewerHandler(http.server.SimpleHTTPRequestHandler):
@@ -77,7 +89,7 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
             threading.Thread(target=_server.shutdown, daemon=True).start()
 
     def send_latest(self):
-        glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
+        glbs = sorted_glbs()
         code = ""
         step_name = None
         if glbs:
@@ -86,9 +98,7 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
                 code = py.read_text()
             elif SCRIPT_PATH.exists():
                 code = SCRIPT_PATH.read_text()
-            step_path = glbs[0].with_suffix(".step")
-            if step_path.exists():
-                step_name = step_path.name
+            step_name = step_sibling(glbs[0])
         elif SCRIPT_PATH.exists():
             code = SCRIPT_PATH.read_text()
         data = {
@@ -107,26 +117,27 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json({"name": name, "code": code})
 
     def list_models(self):
-        glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
         models = []
-        for g in glbs:
+        for g in sorted_glbs():
             stat = g.stat()
-            step_exists = g.with_suffix(".step").exists()
-            script = g.with_suffix(".py")
             models.append({
                 "file": g.name,
                 "name": g.stem,
                 "mtime": int(stat.st_mtime * 1000),
                 "size": stat.st_size,
-                "step": g.with_suffix(".step").name if step_exists else None,
-                "has_script": script.exists(),
+                "step": step_sibling(g),
+                "has_script": g.with_suffix(".py").exists(),
             })
         self.send_json({"models": models})
 
     def download_file(self):
         # /api/download/<name>.step
-        filename = self.path.split("/api/download/", 1)[1]
-        filepath = MODELS_DIR / filename
+        filename = unquote(self.path.split("/api/download/", 1)[1])
+        filepath = (MODELS_DIR / filename).resolve()
+        # Keep the download confined to the models dir, whatever the caller sent.
+        if not filepath.is_relative_to(MODELS_DIR.resolve()):
+            self.send_error(404, "File not found")
+            return
         if not filepath.exists() or not filepath.suffix == ".step":
             self.send_error(404, "File not found")
             return
@@ -188,7 +199,7 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
                 [get_python(), str(script_path)],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=RUN_TIMEOUT,
                 cwd=str(SKILL_DIR),
                 env={**os.environ, "PYTHONPATH": str(SKILL_DIR)},
             )
@@ -200,7 +211,10 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
                 short_err = err[-1] if err else "unknown error"
                 self.send_json({"ok": False, "error": short_err, "stderr": result.stderr})
         except subprocess.TimeoutExpired:
-            self.send_json({"ok": False, "error": "timeout (30s)"})
+            self.send_json({
+                "ok": False,
+                "error": f"still running after {RUN_TIMEOUT}s, gave up",
+            })
         except Exception as e:
             self.send_json({"ok": False, "error": str(e)})
 
@@ -225,7 +239,7 @@ def main():
     MODELS_DIR.mkdir(exist_ok=True)
 
     global _server
-    _server = http.server.HTTPServer(("", port), ViewerHandler)
+    _server = http.server.HTTPServer((HOST, port), ViewerHandler)
     print(f"build123d viewer: http://localhost:{port}")
     print(f"models dir:       {MODELS_DIR}")
     print(f"python:           {get_python()}")

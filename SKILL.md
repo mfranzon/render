@@ -5,9 +5,9 @@ description: |
   and render it in the browser viewer. Use when asked to "render", "make a 3D model",
   "create a part", "design a", "model a", "model from image", "recreate this",
   or any 3D modeling request. Supports reference photos, sketches, and drawings.
-  Also handles "apply pending edit" — when the user selects an area in the viewer
-  and submits a change request, Claude reads viewer/edits/latest.{png,json} and
-  modifies the current model's script.
+  Also handles "apply pending edit": when the user selects an area in the viewer
+  and submits a change request, Claude reads the queued pairs in
+  viewer/edits/pending/ and modifies the current model's script.
 argument-hint: [image path and/or description of the 3D model]
 allowed-tools:
   - Bash
@@ -15,6 +15,7 @@ allowed-tools:
   - Read
   - WebSearch
   - WebFetch
+  - ScheduleWakeup
 ---
 
 # /render — Generate & View 3D Models
@@ -80,11 +81,12 @@ Look at `$ARGUMENTS`:
    The edit (✎) button lets the user drag a box over an area, type an instruction,
    and queue it for this Claude session to modify that part of the model.
 
-6. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
-   idempotent — calling it again just resets the timer). Call `ScheduleWakeup`
-   with `delaySeconds: 60`, `prompt: "/loop /render apply pending edits"`, and
-   a short `reason` like "auto-apply ✎ edits from viewer". Tell the user one
-   line: "auto-apply loop armed — ✎ edits will be picked up within ~60s".
+6. **Mention hands-free edits once** (do not arm anything by default). Tell the
+   user one line: "run `/loop /render apply pending edits` to auto-apply ✎ edits".
+   Only when the user asks for hands-free behaviour, call `ScheduleWakeup` with
+   `delaySeconds: 60`, `prompt: "/loop /render apply pending edits"`, and a short
+   `reason` like "auto-apply ✎ edits from viewer". Arming it unprompted polls an
+   empty queue every 60s for the rest of the session.
 
 ## Steps — Image mode (reference image provided)
 
@@ -140,10 +142,9 @@ Look at `$ARGUMENTS`:
    http://localhost:3123. Mention what dimensions you used and any assumptions,
    so the user can adjust in the code panel.
 
-10. **Auto-arm the edit-apply loop** (same as text-mode step 6). Call
-   `ScheduleWakeup` with `delaySeconds: 60`, `prompt: "/loop /render apply
-   pending edits"`, and a short `reason`. Tell the user: "auto-apply loop
-   armed — ✎ edits will be picked up within ~60s".
+10. **Mention hands-free edits once** (same as text-mode step 6). Tell the user
+   they can run `/loop /render apply pending edits`, and only arm
+   `ScheduleWakeup` if they ask for it.
 
 ## Steps — Edit mode (apply pending edits)
 

@@ -46,6 +46,7 @@ The viewer starts automatically on first render. It includes:
 - Code editor panel (`</> code`) for tweaking parameters, Ctrl+Enter to re-render
 - Model gallery (`▦ models`) to browse previous renders
 - Render mode toggle (solid / wireframe / x-ray)
+- Dimension overlay (`□ dims`) with a bounding box and W/D/H labels
 - Cross-section slice (`✂ slice`) — X/Y/Z axis, position slider, flip
 - STEP export (`⬳ STEP`) for sending to a slicer or CAD tool
 - Edit mode (`✎ edit`) — drag a box on the model, type an instruction, Claude applies it
@@ -68,9 +69,8 @@ Claude picks up queued edits in one of two ways:
 - **On-demand**: type `/render apply pending edits` — Claude processes every
   queued edit, modifies the relevant `viewer/models/<name>.py`, re-runs it,
   and the viewer reloads.
-- **Hands-free**: the first time you run `/render` in a session, Claude
-  auto-arms a loop (`/loop /render apply pending edits`) with a file-watcher
-  that picks up new ✎ submissions within ~1 second.
+- **Hands-free**: run `/loop /render apply pending edits` once per session.
+  Claude re-checks the queue about every 60s until you stop the loop.
 
 Every applied edit is echoed back in chat as `📝 Edit prompt: "..."` so you
 can see exactly what you asked for before the change lands.
@@ -83,7 +83,8 @@ can see exactly what you asked for before the change lands.
 ├── viewer/
 │   ├── index.html     # Three.js viewer, hamburger menu, edit/slice tools
 │   ├── serve.py       # Local HTTP server (port 3123) + /api/edit endpoint
-│   ├── render.py      # render() helper for exporting .glb + .step
+│   ├── render.py      # render() helper: exports .glb + .step + .stl and
+│   │                  # saves a copy of the model script next to them
 │   ├── models/        # Generated .glb / .step files + scripts
 │   └── edits/
 │       ├── pending/   # Queued ✎ edits waiting for Claude
@@ -96,7 +97,9 @@ can see exactly what you asked for before the change lands.
 - Python 3.10+
 - Claude Code
 
-No other dependencies — `setup.sh` creates an isolated venv and installs everything.
+No other Python dependencies: `setup.sh` creates an isolated venv and installs
+everything. The viewer page itself loads three.js from jsdelivr, so the first
+load needs network access.
 
 ## Manual usage
 

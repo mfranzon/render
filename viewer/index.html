@@ -17,6 +17,7 @@
   #hud .file { color: #7fdbca; }
   #hud .status { color: #999; }
   #hud .waiting { color: #f0c674; }
+  #hud .error { color: #cc6666; }
 
   #axes-helper {
     position: fixed; bottom: 16px; left: 16px;
@@ -429,7 +430,7 @@ axesScene.add(new THREE.AxesHelper(1));
 
 // HUD
 const hud = document.getElementById('hud');
-function updateHud(file, status) {
+function updateHud(file, status, cls) {
   hud.innerHTML = '';
   if (file) {
     const f = document.createElement('div');
@@ -438,7 +439,7 @@ function updateHud(file, status) {
     hud.appendChild(f);
   }
   const s = document.createElement('div');
-  s.className = status === 'waiting' ? 'waiting' : 'status';
+  s.className = cls || (status === 'waiting' ? 'waiting' : 'status');
   s.textContent = status === 'waiting' ? 'waiting for model...' : status;
   hud.appendChild(s);
 }
@@ -450,8 +451,11 @@ let currentFile = null;
 let modelVersion = 0;
 let activeModelName = null;
 
-function loadModel(url, filename) {
+const loadFailures = new Map();
+
+function loadModel(url, filename, opts = {}) {
   loader.load(url, (gltf) => {
+    loadFailures.delete(filename);
     if (currentModel) scene.remove(currentModel);
     currentModel = gltf.scene;
 
@@ -491,6 +495,17 @@ function loadModel(url, filename) {
     // Build stencil cap helpers for slice mode and apply current clip state
     rebuildSliceHelpers();
     applyClippingToModel();
+  }, undefined, () => {
+    // A .glb read while it is still being written fails to parse, so let the
+    // next poll retry a few times before calling it broken.
+    const tries = (loadFailures.get(filename) || 0) + 1;
+    loadFailures.set(filename, tries);
+    if (opts.retry && tries <= 3) {
+      modelVersion = -1;
+      updateHud(currentFile, `reloading ${filename}...`);
+    } else {
+      updateHud(currentFile, `could not load ${filename}`, 'error');
+    }
   });
 }
 
@@ -679,6 +694,10 @@ sliceFlipBtn.addEventListener('click', () => {
   updateSlicePlane();
 });
 
+// STEP download target, kept in sync by poll() and the gallery
+const stepBtn = document.getElementById('download-step');
+let currentStep = null;
+
 // Poll for latest model + code
 async function poll() {
   try {
@@ -687,7 +706,7 @@ async function poll() {
     if (data.file && data.version !== modelVersion) {
       modelVersion = data.version;
       activeModelName = data.file.replace(/\.glb$/, '');
-      loadModel('/models/' + data.file + '?t=' + Date.now(), data.file);
+      loadModel('/models/' + data.file + '?t=' + Date.now(), data.file, { retry: true });
       if (galleryPanel.classList.contains('open')) refreshGallery();
       // Load the source code
       if (data.code) {
@@ -708,10 +727,6 @@ async function poll() {
 }
 setInterval(poll, 1000);
 poll();
-
-// STEP download
-const stepBtn = document.getElementById('download-step');
-let currentStep = null;
 
 stepBtn.addEventListener('click', () => {
   if (currentStep) {
@@ -836,6 +851,10 @@ galleryCloseBtn.addEventListener('click', () => {
   resizeViewer();
 });
 
+function clearGalleryItems() {
+  galleryList.querySelectorAll('.gallery-item').forEach(el => el.remove());
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -855,6 +874,9 @@ async function refreshGallery() {
     const models = data.models || [];
 
     if (models.length === 0) {
+      clearGalleryItems();
+      // galleryEmpty lives inside the list, so a previous rebuild detached it.
+      if (!galleryEmpty.isConnected) galleryList.appendChild(galleryEmpty);
       galleryEmpty.style.display = '';
       return;
     }
@@ -872,7 +894,7 @@ async function refreshGallery() {
       return;
     }
 
-    galleryList.innerHTML = '';
+    clearGalleryItems();
     for (const m of models) {
       const item = document.createElement('div');
       item.className = 'gallery-item' + (m.name === activeModelName ? ' active' : '');

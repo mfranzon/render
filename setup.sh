@@ -23,4 +23,5 @@ fi
 echo "Setting up render skill..."
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet "build123d @ git+https://github.com/gumyr/build123d.git"
+touch "$VENV_DIR/.b3d-ready"
 echo "READY"
