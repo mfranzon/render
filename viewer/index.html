@@ -238,6 +238,14 @@
   #edit-modal-bar .cancel:hover { background: rgba(255,255,255,0.05); color: #e0e0e0; }
   #edit-status { font-size: 11px; color: #cc6666; margin-top: 6px; min-height: 14px; }
 
+  #edit-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .edit-chip {
+    background: rgba(127,219,202,0.07); border: 1px solid rgba(127,219,202,0.22);
+    color: #7fdbca; font-family: monospace; font-size: 10px;
+    padding: 2px 8px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .edit-chip:hover { background: rgba(127,219,202,0.18); }
+
   #edit-toast {
     position: fixed; top: 70px; right: 16px;
     padding: 10px 14px;
@@ -252,6 +260,22 @@
   #edit-toast.fade { opacity: 0; }
   #edit-toast .hint { color: #666; font-size: 10px; }
   #code-panel.open ~ #edit-toast { right: 436px; }
+
+  /* Dimension labels */
+  .dim-label {
+    position: fixed;
+    background: rgba(0,0,0,0.72);
+    color: #7fdbca;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid rgba(127,219,202,0.35);
+    pointer-events: none;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -276,7 +300,7 @@
 
 <div id="code-panel">
   <header>
-    <span>script.py</span>
+    <span id="code-panel-title">script.py</span>
     <button id="close-code">&times;</button>
   </header>
   <textarea id="code-editor" spellcheck="false" placeholder="# build123d code will appear here when a model is rendered..."></textarea>
@@ -303,6 +327,7 @@
     <button id="toggle-gallery" title="Model gallery">&#x25A6; models</button>
     <button id="render-mode" title="Cycle: solid / wireframe / x-ray">&#x25A0; solid</button>
     <button id="toggle-slice" title="Cross-section slice">&#x2702; slice</button>
+    <button id="toggle-dims" title="Toggle dimension annotations">&#x25A1; dims</button>
     <button id="edit-area" title="Select an area to edit with Claude">&#x270E; edit</button>
     <button id="download-step" disabled title="Export STEP file">&#x2B73; STEP</button>
     <button id="toggle-code">&lt;/&gt; code</button>
@@ -317,6 +342,14 @@
 <div id="edit-modal">
   <div class="hint">describe the change for the selected area</div>
   <textarea id="edit-prompt" placeholder="e.g. make this hole larger"></textarea>
+  <div id="edit-chips">
+    <button class="edit-chip">make this larger</button>
+    <button class="edit-chip">make this smaller</button>
+    <button class="edit-chip">add a fillet here</button>
+    <button class="edit-chip">add a hole here</button>
+    <button class="edit-chip">increase thickness</button>
+    <button class="edit-chip">remove this feature</button>
+  </div>
   <div id="edit-status"></div>
   <div id="edit-modal-bar">
     <button class="cancel" id="edit-cancel">cancel</button>
@@ -342,6 +375,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Main scene
 const canvas = document.getElementById('viewer');
@@ -351,7 +385,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x1a1a2e);
 renderer.localClippingEnabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
@@ -361,25 +395,25 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-// Lights — studio-ish 3-point + hemisphere + ambient
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-scene.add(new THREE.HemisphereLight(0xddeeff, 0x404060, 0.8));
+// Soft 3-point studio lighting with cool-tone color grading
+scene.add(new THREE.HemisphereLight(0xd3dde6, 0x090c16, 1.62));
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
-keyLight.position.set(5, 10, 7);
+const keyLight = new THREE.DirectionalLight(0xd6e0ea, 0.82);
+keyLight.position.set(2.2, -2.0, 3.2);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xffffff, 0.9);
-fillLight.position.set(-6, 3, -4);
+const fillLight = new THREE.DirectionalLight(0x6b7f95, 0.46);
+fillLight.position.set(-3, 1.2, 1.4);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
-rimLight.position.set(0, -5, -8);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.04);
+rimLight.position.set(0, 5, -5);
 scene.add(rimLight);
 
-const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
-topLight.position.set(0, 12, 0);
-scene.add(topLight);
+// PMREM environment for reflections on MeshStandardMaterial
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+pmremGenerator.dispose();
 
 // Grid
 scene.add(new THREE.GridHelper(10, 20, 0x333355, 0x222244));
@@ -440,6 +474,8 @@ function loadModel(url, filename) {
     const mm = (v) => (v * 1000).toFixed(1);
     const dims = `${mm(size.x)} x ${mm(size.y)} x ${mm(size.z)} mm`;
     updateHud(filename, dims);
+    document.getElementById('code-panel-title').textContent = filename.replace(/\.glb$/, '.py');
+    if (dimsEnabled) buildDimLabels(size);
 
     // Update slice bounds from centered model half-extents
     sliceState.bounds.x = size.x / 2;
@@ -744,7 +780,7 @@ async function runCode() {
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.value }),
+      body: JSON.stringify({ code: editor.value, model: activeModelName }),
     });
     const data = await resp.json();
     if (data.ok) {
@@ -855,6 +891,7 @@ async function refreshGallery() {
 
 async function loadGalleryModel(m) {
   activeModelName = m.name;
+  document.getElementById('code-panel-title').textContent = m.name + '.py';
   loadModel('/models/' + m.file + '?t=' + Date.now(), m.file);
 
   // Update active highlight
@@ -1041,12 +1078,87 @@ async function sendEdit() {
 
 editSendBtn.addEventListener('click', sendEdit);
 editCancelBtn.addEventListener('click', exitEditMode);
+document.querySelectorAll('.edit-chip').forEach(chip => {
+  chip.addEventListener('click', () => { editPrompt.value = chip.textContent; editPrompt.focus(); });
+});
 editPrompt.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendEdit(); }
   else if (e.key === 'Escape') { exitEditMode(); }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && editMode) exitEditMode();
+});
+
+// ─── Dimension annotations ───────────────────────────────────────────────────
+const dimsToggleBtn = document.getElementById('toggle-dims');
+let dimsEnabled = false;
+let dimsBox3Helper = null;
+const dimLabelEls = [];
+const dimLabelPositions = [];
+
+function buildDimLabels(size) {
+  removeDimLabels();
+  // Bounding box wireframe — model is centered at origin after loadModel
+  const half = new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2);
+  const box3 = new THREE.Box3(half.clone().negate(), half.clone());
+  dimsBox3Helper = new THREE.Box3Helper(box3, 0x7fdbca);
+  dimsBox3Helper.material.transparent = true;
+  dimsBox3Helper.material.opacity = 0.55;
+  scene.add(dimsBox3Helper);
+
+  const mm = (v) => (v * 1000).toFixed(1);
+  const off = Math.max(size.x, size.y, size.z) * 0.12;
+  // Label positions: mid of each axis edge, offset outward so they don't overlap the box
+  const specs = [
+    { text: `W  ${mm(size.x)} mm`, pos: new THREE.Vector3(0,               -half.y - off, half.z + off) },
+    { text: `D  ${mm(size.y)} mm`, pos: new THREE.Vector3(half.x + off,    0,             half.z + off) },
+    { text: `H  ${mm(size.z)} mm`, pos: new THREE.Vector3(half.x + off,   -half.y - off,  0           ) },
+  ];
+  for (const spec of specs) {
+    const el = document.createElement('div');
+    el.className = 'dim-label';
+    el.textContent = spec.text;
+    document.body.appendChild(el);
+    dimLabelEls.push(el);
+    dimLabelPositions.push(spec.pos.clone());
+  }
+}
+
+function removeDimLabels() {
+  for (const el of dimLabelEls) el.remove();
+  dimLabelEls.length = 0;
+  dimLabelPositions.length = 0;
+  if (dimsBox3Helper) {
+    scene.remove(dimsBox3Helper);
+    dimsBox3Helper.geometry.dispose();
+    dimsBox3Helper.material.dispose();
+    dimsBox3Helper = null;
+  }
+}
+
+const _dimTmp = new THREE.Vector3();
+function updateDimLabelPositions() {
+  if (!dimsEnabled || dimLabelEls.length === 0) return;
+  const w = renderer.domElement.clientWidth;
+  const h = renderer.domElement.clientHeight;
+  for (let i = 0; i < dimLabelEls.length; i++) {
+    _dimTmp.copy(dimLabelPositions[i]).project(camera);
+    if (_dimTmp.z > 1) { dimLabelEls[i].style.display = 'none'; continue; }
+    dimLabelEls[i].style.display = 'block';
+    dimLabelEls[i].style.left = ((_dimTmp.x * 0.5 + 0.5) * w) + 'px';
+    dimLabelEls[i].style.top  = ((-_dimTmp.y * 0.5 + 0.5) * h) + 'px';
+  }
+}
+
+dimsToggleBtn.addEventListener('click', () => {
+  dimsEnabled = !dimsEnabled;
+  dimsToggleBtn.classList.toggle('active', dimsEnabled);
+  if (dimsEnabled && currentModel) {
+    const box = new THREE.Box3().setFromObject(currentModel);
+    buildDimLabels(box.getSize(new THREE.Vector3()));
+  } else {
+    removeDimLabels();
+  }
 });
 
 // Resize viewer when panel opens/closes
@@ -1064,6 +1176,7 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  updateDimLabelPositions();
   axesCamera.position.copy(camera.position).normalize().multiplyScalar(2.5);
   axesCamera.lookAt(0, 0, 0);
   axesRenderer.render(axesScene, axesCamera);

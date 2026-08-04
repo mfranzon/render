@@ -54,28 +54,33 @@ Look at `$ARGUMENTS`:
    lsof -i :3123 -t >/dev/null 2>&1 && echo "VIEWER_RUNNING" || (${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/serve.py &>/tmp/build123d-viewer.log & sleep 1 && echo "VIEWER_STARTED" && open http://localhost:3123)
    ```
 
-2. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/script.py` that:
+2. **Derive a slug** from the description: lowercase, underscores, max 30 chars.
+   Examples: "a gear with 12 teeth" → `gear_12_teeth`, "phone case" → `phone_case`,
+   "torus knot" → `torus_knot`.
+
+3. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/<slug>.py` that:
    - Imports `from build123d import *`
    - Imports `from viewer.render import render`
    - Builds the requested 3D model using build123d algebra or builder API
-   - Calls `render("model", result)` at the end to export the exact CAD
-     geometry. Use `render("model", result, printable=True)` only when the
+   - Calls `render("<slug>", result)` at the end — use the same slug as the
+     filename. Use `render("<slug>", result, printable=True)` only when the
      user asks for a shell/infill printable preview.
 
-3. **Run it**:
+4. **Run it**:
    ```bash
-   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/script.py
+   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/<slug>.py
    ```
 
-4. **Confirm** the model was rendered and tell the user to check http://localhost:3123.
+5. **Confirm** the model was rendered and tell the user to check http://localhost:3123.
    The viewer auto-reloads — the model appears within 1 second.
    The user can open the code panel (</> button) in the browser to tweak parameters
-   and re-render with Ctrl+Enter. The slice (✂) button enables a cross-section
-   clipping plane with X/Y/Z axis, position slider, and flip. The edit (✎) button
-   lets the user drag a box over an area, type an instruction, and queue it for
-   this Claude session to modify that part of the model.
+   and re-render with Ctrl+Enter. The □ dims button toggles a bounding-box overlay
+   with W/D/H dimension labels that track the 3D view. The slice (✂) button enables
+   a cross-section clipping plane with X/Y/Z axis, position slider, and flip.
+   The edit (✎) button lets the user drag a box over an area, type an instruction,
+   and queue it for this Claude session to modify that part of the model.
 
-5. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
+6. **Auto-arm the edit-apply loop** (do this on every text/image render; it's
    idempotent — calling it again just resets the timer). Call `ScheduleWakeup`
    with `delaySeconds: 60`, `prompt: "/loop /render apply pending edits"`, and
    a short `reason` like "auto-apply ✎ edits from viewer". Tell the user one
@@ -116,22 +121,26 @@ Look at `$ARGUMENTS`:
    - Features to add (fillets, chamfers, patterns)
    - Which build123d API to use (algebra for simple, builder for complex)
 
-6. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/script.py`.
+6. **Derive a slug** from the object name (e.g. "ESP32 board" → `esp32_board`,
+   "mounting bracket" → `mounting_bracket`). Max 30 chars, lowercase, underscores.
+
+7. **Write the script**: Create `${CLAUDE_SKILL_DIR}/viewer/models/<slug>.py`.
    Include a comment block at the top noting:
    - Source: reference image
    - Estimated/researched dimensions
    - Any assumptions made
+   Call `render("<slug>", result)` using the same slug as the filename.
 
-7. **Run it**:
+8. **Run it**:
    ```bash
-   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/script.py
+   PYTHONPATH=${CLAUDE_SKILL_DIR} ${CLAUDE_SKILL_DIR}/.venv/bin/python3 ${CLAUDE_SKILL_DIR}/viewer/models/<slug>.py
    ```
 
-8. **Confirm** the model was rendered and tell the user to check
+9. **Confirm** the model was rendered and tell the user to check
    http://localhost:3123. Mention what dimensions you used and any assumptions,
    so the user can adjust in the code panel.
 
-9. **Auto-arm the edit-apply loop** (same as text-mode step 5). Call
+10. **Auto-arm the edit-apply loop** (same as text-mode step 6). Call
    `ScheduleWakeup` with `delaySeconds: 60`, `prompt: "/loop /render apply
    pending edits"`, and a short `reason`. Tell the user: "auto-apply loop
    armed — ✎ edits will be picked up within ~60s".
@@ -250,11 +259,11 @@ solid = revolve(sketch, axis=Axis.X, revolution_arc=360)
 result.color = Color("steelblue")      # good
 result.color = Color(0.8, 0.2, 0.2)   # RGB floats — all channels above 0.25
 
-# Exact CAD export is the default.
-render("model", result)
+# Exact CAD export — use the slug as the name (matches the .py filename).
+render("gear_12_teeth", result)
 
 # Printable shell/infill preview, when explicitly wanted:
-render("printable_model", result, printable=True)
+render("gear_12_teeth", result, printable=True)
 ```
 
 ### Builder mode (for complex models)

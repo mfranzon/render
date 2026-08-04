@@ -78,12 +78,19 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
 
     def send_latest(self):
         glbs = sorted(MODELS_DIR.glob("*.glb"), key=os.path.getmtime, reverse=True)
-        code = SCRIPT_PATH.read_text() if SCRIPT_PATH.exists() else ""
+        code = ""
         step_name = None
         if glbs:
+            py = glbs[0].with_suffix(".py")
+            if py.exists():
+                code = py.read_text()
+            elif SCRIPT_PATH.exists():
+                code = SCRIPT_PATH.read_text()
             step_path = glbs[0].with_suffix(".step")
             if step_path.exists():
                 step_name = step_path.name
+        elif SCRIPT_PATH.exists():
+            code = SCRIPT_PATH.read_text()
         data = {
             "file": glbs[0].name if glbs else None,
             "version": get_model_version(),
@@ -170,13 +177,15 @@ class ViewerHandler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length))
         code = body.get("code", "")
+        model = (body.get("model") or "").strip()
 
-        SCRIPT_PATH.write_text(code)
+        script_path = MODELS_DIR / f"{model}.py" if model else SCRIPT_PATH
+        script_path.write_text(code)
 
         t0 = time.time()
         try:
             result = subprocess.run(
-                [get_python(), str(SCRIPT_PATH)],
+                [get_python(), str(script_path)],
                 capture_output=True,
                 text=True,
                 timeout=30,
