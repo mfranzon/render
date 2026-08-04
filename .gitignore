@@ -1,8 +1,10 @@
 .venv/
 __pycache__/
-viewer/models/*.glb
-viewer/models/*.step
-viewer/models/*.py
-viewer/models/script.py
+.DS_Store
+
+# Generated model output (.glb / .step / .stl / scripts)
+viewer/models/*
+!viewer/models/.gitkeep
+
 .gstack/
 viewer/edits/
